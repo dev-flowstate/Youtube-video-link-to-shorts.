@@ -41,8 +41,10 @@ You need **Python 3.11+** and **FFmpeg**.
 
 ```bash
 # 1. Get the code
-git clone https://github.com/dev-flowstate/Youtube-Videos.git
-cd Youtube-Videos
+# The trailing "." is part of the repo name, and the folder is named
+# explicitly because Windows strips trailing dots from directory names.
+git clone https://github.com/dev-flowstate/Youtube-video-link-to-shorts..git youtube-shorts
+cd youtube-shorts
 
 # 2. FFmpeg (Windows)
 winget install Gyan.FFmpeg
