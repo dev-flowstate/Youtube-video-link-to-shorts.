@@ -55,6 +55,10 @@ graphify-out/
 *.bin
 *.onnx
 
+# ...except the face detection model, which is only 227 KB and ships with the
+# repo so nobody has to download it separately.
+!ClipCaptioner/models/*.onnx
+
 # ---------------------------------------------------------------------------
 # OS cruft
 # ---------------------------------------------------------------------------

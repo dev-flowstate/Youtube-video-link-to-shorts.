@@ -87,9 +87,52 @@ UPPERCASE_CAPTIONS = True
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1920
 
+# Intel QuickSync encodes ~3x faster than libx264 on this class of laptop and
+# keeps the work off the CPU cores. Set to False to force software encoding,
+# e.g. if you dislike the quality or your machine has no Intel iGPU. The
+# renderer falls back to libx264 automatically when QSV is unavailable.
+PREFER_HARDWARE_ENCODER = True
+HARDWARE_ENCODER = "h264_qsv"
+
+# QSV uses -global_quality, libx264 uses -crf. Lower is better quality for both.
+HARDWARE_QUALITY = 22
 VIDEO_CRF = 20
 VIDEO_PRESET = "medium"
 AUDIO_BITRATE = "160k"
+
+# ---------------------------------------------------------------------------
+# Face tracking
+# ---------------------------------------------------------------------------
+
+# Follow faces when choosing the 9:16 crop window instead of always cropping
+# the centre. Falls back to centre framing whenever no face is found.
+TRACK_FACES = True
+
+# "keyframes" decodes only keyframes, which is nearly free and lands a sample
+# right after every scene cut - the moments where reframing actually matters.
+# "dense" samples at TRACKING_DENSE_FPS and costs roughly 0.4x realtime.
+TRACKING_SAMPLE_MODE = "keyframes"
+TRACKING_DENSE_FPS = 2.0
+
+# Frames are downscaled to this width before detection. Bigger finds smaller
+# faces but costs proportionally more.
+TRACKING_FRAME_WIDTH = 480
+
+# Detections below this confidence are ignored.
+TRACKING_MIN_SCORE = 0.6
+
+# Smoothing factor for the crop path, 0-1. Lower is steadier but slower to
+# follow. This is the main dial between "jittery" and "sluggish".
+TRACKING_SMOOTHING = 0.25
+
+# Hard ceiling on how fast the crop may pan, in source pixels per second.
+# Without this, a mis-detection whips the frame across the shot.
+TRACKING_MAX_PAN_PX_PER_S = 420.0
+
+# Ignore a face this far from the current framing - almost always a
+# background person rather than the subject. Fraction of source width.
+TRACKING_MAX_JUMP_FRACTION = 0.45
+
 
 # ---------------------------------------------------------------------------
 # Splitting

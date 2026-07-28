@@ -11,8 +11,9 @@ import config
 import ffmpeg_tools
 import renderer
 import splitter
+import tracker
 import transcriber
-from models import CaptionGroup
+from models import CaptionGroup, VideoInfo
 
 
 class PipelineError(Exception):
@@ -42,6 +43,23 @@ def transcribe_clip(clip: Path) -> list[CaptionGroup]:
     return caption_builder.build_groups(words)
 
 
+def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None:
+    """Face-tracked crop path, or None to fall back to centre framing."""
+    if not config.TRACK_FACES:
+        return None
+
+    crop_w, _crop_h, _x, _y = renderer.compute_crop(info)
+    try:
+        path = tracker.build_crop_path(clip, info, crop_w)
+    except tracker.TrackingUnavailable as exc:
+        # Tracking is an enhancement, never a reason to lose the clip.
+        print(f"    face tracking off ({exc}) - centre crop")
+        return None
+
+    print(f"    face tracking: {len(path)} crop keyframe(s)")
+    return path
+
+
 def process_clip(clip: Path, output_dir: Path) -> list[Path]:
     """Caption one clip, returning every rendered file."""
     info = ffmpeg_tools.probe_video(clip)
@@ -49,6 +67,13 @@ def process_clip(clip: Path, output_dir: Path) -> list[Path]:
 
     groups = transcribe_clip(clip)
     parts = splitter.split_into_parts(groups, duration)
+
+    pending = [
+        part
+        for part in parts
+        if not renderer.build_output_path(output_dir, clip, part).exists()
+    ]
+    crop_path = _crop_path(clip, info) if pending else None
 
     rendered: list[Path] = []
     for part in parts:
@@ -62,7 +87,9 @@ def process_clip(clip: Path, output_dir: Path) -> list[Path]:
             f"    part {part.index}/{part.total}: "
             f"{part.duration_s:.0f}s, {len(part.groups)} caption group(s) - rendering"
         )
-        rendered.append(renderer.render_part(clip, part, info, output_path))
+        rendered.append(
+            renderer.render_part(clip, part, info, output_path, crop_path=crop_path)
+        )
 
     return rendered
 

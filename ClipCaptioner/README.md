@@ -60,15 +60,24 @@ Everything tunable lives in `config.py`.
 | `caption_builder.py` | Groups words into short on-screen bursts |
 | `ass_writer.py` | Emits the ASS subtitle file |
 | `splitter.py` | Splits long clips on speech gaps |
+| `tracker.py` | Face detection and the smoothed crop path |
 | `renderer.py` | Crop, burn-in, encode |
 | `ffmpeg_tools.py` | FFmpeg discovery, execution, probing |
+| `models/` | YuNet face detection model (227 KB, ships with the repo) |
 
 ## Notes
 
-Two details that are easy to get wrong if you edit this:
+Details that are easy to get wrong if you edit this:
 
 - **ASS colours are `BBGGRR`**, the reverse of web hex. Amber is `00E5FF`,
   not `FFE500`.
-- **The `subtitles` filter is given a bare filename**, with FFmpeg's working
-  directory set to the file's folder. Passing an absolute Windows path breaks
-  the filtergraph parser, which treats `:` as an argument separator.
+- **File paths in the filtergraph are bare filenames**, with FFmpeg's working
+  directory set to the folder holding them. This applies to both the subtitle
+  file and the sendcmd script. An absolute Windows path breaks the parser,
+  which treats `:` as an argument separator.
+- **Crop panning is driven by `sendcmd`**, which rewrites the `crop` filter's
+  `x` as the clip plays. Timestamps in that script are relative to the part,
+  not the source clip, because input seeking rezeroes the clock.
+- **Hardware encoding is probed, not assumed.** `h264_qsv` is listed in most
+  FFmpeg builds but fails without a matching iGPU and driver, so the renderer
+  encodes a throwaway frame once to check before relying on it.

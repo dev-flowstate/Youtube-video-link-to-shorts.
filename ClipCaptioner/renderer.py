@@ -2,15 +2,76 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 from pathlib import Path
 
 import ass_writer
 import config
 import ffmpeg_tools
+import tracker
 from models import ClipPart, VideoInfo
 
 _TARGET_ASPECT = config.TARGET_WIDTH / config.TARGET_HEIGHT
+
+_hardware_encoder_ok: bool | None = None
+
+
+def hardware_encoder_available() -> bool:
+    """Probe once whether the GPU encoder actually works on this machine.
+
+    Listing the encoder is not proof it runs - QSV is present in most FFmpeg
+    builds but fails without a matching Intel iGPU and driver, so this
+    encodes a throwaway frame instead of trusting `-encoders`.
+    """
+    global _hardware_encoder_ok
+    if _hardware_encoder_ok is not None:
+        return _hardware_encoder_ok
+
+    if not config.PREFER_HARDWARE_ENCODER:
+        _hardware_encoder_ok = False
+        return False
+
+    probe = [
+        ffmpeg_tools.tool_path("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=256x256:d=0.1",
+        "-c:v",
+        config.HARDWARE_ENCODER,
+        "-f",
+        "null",
+        "-",
+    ]
+    result = subprocess.run(probe, capture_output=True, text=True, check=False)
+    _hardware_encoder_ok = result.returncode == 0
+
+    if not _hardware_encoder_ok:
+        print(f"    {config.HARDWARE_ENCODER} unavailable, using libx264")
+
+    return _hardware_encoder_ok
+
+
+def _encoder_args() -> list[str]:
+    if hardware_encoder_available():
+        return [
+            "-c:v",
+            config.HARDWARE_ENCODER,
+            "-global_quality",
+            str(config.HARDWARE_QUALITY),
+        ]
+    return [
+        "-c:v",
+        "libx264",
+        "-preset",
+        config.VIDEO_PRESET,
+        "-crf",
+        str(config.VIDEO_CRF),
+    ]
 
 
 def _even(value: int) -> int:
@@ -38,17 +99,28 @@ def compute_crop(info: VideoInfo) -> tuple[int, int, int, int]:
     return crop_w, crop_h, x, y
 
 
-def _build_filter(info: VideoInfo, subtitle_name: str) -> str:
+def _build_filter(
+    info: VideoInfo,
+    subtitle_name: str,
+    sendcmd_name: str | None,
+) -> str:
+    """Filter chain: crop to 9:16, scale, then burn in the captions.
+
+    Every file is referenced by bare name; FFmpeg runs with cwd set to their
+    folder so Windows drive letters never reach the filtergraph parser, where
+    a colon separates arguments.
+    """
     crop_w, crop_h, x, y = compute_crop(info)
-    return (
-        f"crop={crop_w}:{crop_h}:{x}:{y},"
-        f"scale={config.TARGET_WIDTH}:{config.TARGET_HEIGHT}:flags=lanczos,"
-        f"setsar=1,"
-        # Referenced by bare name; ffmpeg runs with cwd set to the file's
-        # folder so Windows drive letters never reach the filtergraph parser,
-        # where a colon separates arguments.
-        f"subtitles={subtitle_name}"
-    )
+
+    stages = []
+    if sendcmd_name:
+        # sendcmd rewrites crop's x as the clip plays, panning the window.
+        stages.append(f"sendcmd=f={sendcmd_name}")
+    stages.append(f"crop={crop_w}:{crop_h}:{x}:{y}")
+    stages.append(f"scale={config.TARGET_WIDTH}:{config.TARGET_HEIGHT}:flags=lanczos")
+    stages.append("setsar=1")
+    stages.append(f"subtitles={subtitle_name}")
+    return ",".join(stages)
 
 
 def render_part(
@@ -56,6 +128,7 @@ def render_part(
     part: ClipPart,
     info: VideoInfo,
     output_path: Path,
+    crop_path: list[tracker.CropKeyframe] | None = None,
 ) -> Path:
     """Render one part of a clip as a captioned vertical video."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +137,21 @@ def render_part(
         work_dir = Path(tmp)
         subtitle_name = "subs.ass"
         ass_writer.write_ass(part.groups, work_dir / subtitle_name)
+
+        sendcmd_name = None
+        if crop_path:
+            # Rebase onto this part's timeline; input seeking zeroes the clock.
+            local = [
+                tracker.CropKeyframe(time_s=key.time_s - part.start_s, x=key.x)
+                for key in crop_path
+                if part.start_s - 1.0 <= key.time_s <= part.end_s
+            ]
+            local = [
+                tracker.CropKeyframe(time_s=max(0.0, key.time_s), x=key.x) for key in local
+            ]
+            if local:
+                sendcmd_name = "crop.cmd"
+                tracker.write_sendcmd(local, work_dir / sendcmd_name)
 
         args = [
             ffmpeg_tools.tool_path("ffmpeg"),
@@ -77,13 +165,8 @@ def render_part(
             "-i",
             str(source),
             "-vf",
-            _build_filter(info, subtitle_name),
-            "-c:v",
-            "libx264",
-            "-preset",
-            config.VIDEO_PRESET,
-            "-crf",
-            str(config.VIDEO_CRF),
+            _build_filter(info, subtitle_name, sendcmd_name),
+            *_encoder_args(),
             "-pix_fmt",
             "yuv420p",
             "-c:a",
