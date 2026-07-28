@@ -1,9 +1,16 @@
 """Follow the speaker's face so the 9:16 crop frames them, not the centre.
 
-Sampling is deliberately sparse. Decoding only keyframes costs almost nothing
-and, because encoders place a keyframe at every scene cut, it puts a sample
-exactly where the framing needs to change. The result is a list of crop
-positions over time that gets handed to FFmpeg's sendcmd filter.
+The output is a dense, continuous crop path rather than a handful of
+positions. Three things make the motion read as smooth:
+
+* faces are sampled several times a second, so the path has real detail
+* gaps are interpolated and the path is filtered forwards *and* backwards,
+  which smooths without adding the lag a one-way filter would
+* the result is resampled to a fine time grid, so FFmpeg's crop moves in
+  steps too small to see
+
+Scene cuts are detected and treated as hard boundaries: the crop repositions
+instantly across a cut, because sliding through one looks like a mistake.
 """
 
 from __future__ import annotations
@@ -32,71 +39,53 @@ class CropKeyframe:
     x: int
 
 
-def _keyframe_times(video: Path) -> list[float]:
-    args = [
-        ffmpeg_tools.tool_path("ffprobe"),
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-skip_frame",
-        "nokey",
-        "-show_entries",
-        "frame=pts_time",
-        "-of",
-        "csv=p=0",
-        str(video),
-    ]
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise TrackingUnavailable(f"Could not read keyframes: {result.stderr.strip()[-300:]}")
+@dataclass
+class _Sample:
+    """One inspected frame."""
 
-    times: list[float] = []
-    for line in result.stdout.splitlines():
-        value = line.strip().rstrip(",")
-        if not value:
-            continue
-        try:
-            times.append(float(value))
-        except ValueError:
-            continue
-    return times
+    time_s: float
+    center_x: float | None  # source pixels, None when no face was found
+    starts_shot: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Sampling and detection
+# ---------------------------------------------------------------------------
 
 
 def _extract_frames(video: Path, work_dir: Path) -> list[tuple[float, Path]]:
-    """Write downscaled sample frames and pair each with its timestamp."""
-    args = [ffmpeg_tools.tool_path("ffmpeg"), "-y", "-loglevel", "error"]
-
-    if config.TRACKING_SAMPLE_MODE == "keyframes":
-        times = _keyframe_times(video)
-        args += ["-skip_frame", "nokey", "-i", str(video)]
-        args += ["-vf", f"scale={config.TRACKING_FRAME_WIDTH}:-2"]
-    else:
-        fps = max(0.1, config.TRACKING_DENSE_FPS)
-        args += ["-i", str(video)]
-        args += ["-vf", f"fps={fps},scale={config.TRACKING_FRAME_WIDTH}:-2"]
-        times = []
-
-    args += ["-vsync", "0", "-q:v", "4", str(work_dir / "f_%06d.jpg")]
+    """Write downscaled sample frames at a fixed rate."""
+    fps = max(0.5, config.TRACKING_SAMPLE_FPS)
+    args = [
+        ffmpeg_tools.tool_path("ffmpeg"),
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video),
+        "-vf",
+        f"fps={fps},scale={config.TRACKING_FRAME_WIDTH}:-2",
+        "-vsync",
+        "0",
+        "-q:v",
+        "4",
+        str(work_dir / "f_%06d.jpg"),
+    ]
     ffmpeg_tools.run(args)
 
     frames = sorted(work_dir.glob("f_*.jpg"))
     if not frames:
         raise TrackingUnavailable("No sample frames were produced")
 
-    if not times:
-        step = 1.0 / max(0.1, config.TRACKING_DENSE_FPS)
-        times = [index * step for index in range(len(frames))]
-
-    # Frame extraction and the pts listing can disagree by one at the tail.
-    count = min(len(frames), len(times))
-    return list(zip(times[:count], frames[:count]))
+    step = 1.0 / fps
+    return [(index * step, path) for index, path in enumerate(frames)]
 
 
-def _detect_centers(samples: list[tuple[float, Path]], info: VideoInfo) -> list[tuple[float, float]]:
-    """Return (time, face centre x in source pixels) for frames with a face."""
+def _inspect_frames(samples: list[tuple[float, Path]], info: VideoInfo) -> list[_Sample]:
+    """Detect the subject's face and flag scene cuts, in one pass."""
     try:
         import cv2
+        import numpy as np
     except ImportError as exc:
         raise TrackingUnavailable("opencv-python is not installed") from exc
 
@@ -104,7 +93,8 @@ def _detect_centers(samples: list[tuple[float, Path]], info: VideoInfo) -> list[
         raise TrackingUnavailable(f"Face model missing: {_MODEL_PATH.name}")
 
     detector = None
-    centers: list[tuple[float, float]] = []
+    previous_thumb = None
+    results: list[_Sample] = []
 
     for time_s, frame_path in samples:
         image = cv2.imread(str(frame_path))
@@ -112,6 +102,15 @@ def _detect_centers(samples: list[tuple[float, Path]], info: VideoInfo) -> list[
             continue
 
         height, width = image.shape[:2]
+
+        # Cut detection: compare a tiny greyscale thumbnail against the last
+        # frame. Cheap, and robust enough since cuts change nearly every pixel.
+        thumb = cv2.cvtColor(cv2.resize(image, (64, 36)), cv2.COLOR_BGR2GRAY).astype("float32")
+        starts_shot = previous_thumb is None or (
+            float(np.mean(np.abs(thumb - previous_thumb))) >= config.TRACKING_CUT_THRESHOLD
+        )
+        previous_thumb = thumb
+
         if detector is None:
             detector = cv2.FaceDetectorYN.create(
                 str(_MODEL_PATH),
@@ -121,66 +120,245 @@ def _detect_centers(samples: list[tuple[float, Path]], info: VideoInfo) -> list[
             )
 
         _, faces = detector.detect(image)
-        if faces is None or len(faces) == 0:
+        center_x = None
+        if faces is not None and len(faces) > 0:
+            # Largest face wins - the speaker is nearer the camera than bystanders.
+            best = max(faces, key=lambda face: float(face[2]) * float(face[3]))
+            center_small = float(best[0]) + float(best[2]) / 2.0
+            center_x = center_small / width * info.width
+
+        results.append(_Sample(time_s=time_s, center_x=center_x, starts_shot=starts_shot))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Path building
+# ---------------------------------------------------------------------------
+
+
+def _split_shots(samples: list[_Sample]) -> list[list[_Sample]]:
+    """Group samples into shots, so smoothing never crosses a cut."""
+    shots: list[list[_Sample]] = []
+    current: list[_Sample] = []
+
+    for sample in samples:
+        if sample.starts_shot and current:
+            shots.append(current)
+            current = []
+        current.append(sample)
+
+    if current:
+        shots.append(current)
+    return _merge_short_shots(shots)
+
+
+def _merge_short_shots(shots: list[list[_Sample]]) -> list[list[_Sample]]:
+    """Fold very short shots into their neighbour.
+
+    Handheld camera movement trips the cut detector, producing runs of
+    one-sample "shots". Each of those would become an instant jump, which is
+    exactly the stutter this is meant to avoid. Real cuts are rarely this
+    close together, so anything brief is treated as motion, not an edit.
+    """
+    if not shots:
+        return shots
+
+    merged: list[list[_Sample]] = [shots[0]]
+    for shot in shots[1:]:
+        duration = shot[-1].time_s - shot[0].time_s
+        span = 1.0 / max(0.5, config.TRACKING_SAMPLE_FPS)
+        if duration + span < config.TRACKING_MIN_SHOT_S:
+            merged[-1].extend(shot)
+        else:
+            merged.append(shot)
+
+    return merged
+
+
+def _fill_gaps(shot: list[_Sample], fallback: float) -> list[float]:
+    """Linearly interpolate across frames where no face was found."""
+    values: list[float | None] = [sample.center_x for sample in shot]
+
+    known = [index for index, value in enumerate(values) if value is not None]
+    if not known:
+        return [fallback] * len(values)
+
+    # Hold the first and last known values out to the shot's edges.
+    for index in range(known[0]):
+        values[index] = values[known[0]]
+    for index in range(known[-1] + 1, len(values)):
+        values[index] = values[known[-1]]
+
+    for left, right in zip(known, known[1:]):
+        if right - left <= 1:
             continue
+        start_value = values[left]
+        end_value = values[right]
+        span = right - left
+        for offset in range(1, span):
+            ratio = offset / span
+            values[left + offset] = start_value + (end_value - start_value) * ratio
 
-        # Largest face wins - the speaker is nearer the camera than bystanders.
-        best = max(faces, key=lambda face: float(face[2]) * float(face[3]))
-        center_x_small = float(best[0]) + float(best[2]) / 2.0
-        centers.append((time_s, center_x_small / width * info.width))
-
-    return centers
+    return [float(value) for value in values]
 
 
-def _smooth(
-    centers: list[tuple[float, float]],
-    info: VideoInfo,
-    crop_width: int,
-) -> list[CropKeyframe]:
-    """Turn raw detections into a steady, speed-limited crop path."""
-    half = crop_width / 2.0
-    max_x = max(0, info.width - crop_width)
-    default_center = info.width / 2.0
+def _reject_outliers(values: list[float], info: VideoInfo) -> list[float]:
+    """Drop detections far from the running position - usually bystanders."""
+    limit = config.TRACKING_MAX_JUMP_FRACTION * info.width
+    cleaned: list[float] = []
+    anchor = values[0]
 
-    smoothed: list[CropKeyframe] = []
-    current = default_center
-    previous_time: float | None = None
-    max_jump = config.TRACKING_MAX_JUMP_FRACTION * info.width
+    for value in values:
+        if abs(value - anchor) > limit:
+            value = anchor
+        cleaned.append(value)
+        anchor = value
 
-    for time_s, target in centers:
-        # A detection miles from the current framing is a bystander, not a cut.
-        if abs(target - current) > max_jump:
-            target = current
+    return cleaned
 
-        blended = current + (target - current) * config.TRACKING_SMOOTHING
 
-        if previous_time is not None:
-            elapsed = max(1e-3, time_s - previous_time)
-            limit = config.TRACKING_MAX_PAN_PX_PER_S * elapsed
-            delta = blended - current
-            if abs(delta) > limit:
-                blended = current + (limit if delta > 0 else -limit)
+def _clamp_speed(values: list[float], dt: float) -> list[float]:
+    """Cap how far the target may move between samples."""
+    limit = config.TRACKING_MAX_PAN_PX_PER_S * dt
+    clamped = [values[0]]
 
-        current = blended
-        previous_time = time_s
+    for value in values[1:]:
+        delta = value - clamped[-1]
+        if abs(delta) > limit:
+            value = clamped[-1] + (limit if delta > 0 else -limit)
+        clamped.append(value)
 
-        x = int(round(current - half))
-        smoothed.append(CropKeyframe(time_s=time_s, x=max(0, min(max_x, x))))
+    return clamped
 
-    return smoothed
+
+def _smooth_zero_phase(values: list[float], dt: float) -> list[float]:
+    """Moving average applied forwards then backwards, so it adds no lag.
+
+    A one-way filter is what makes tracking feel like it is dragging behind
+    the subject; running it in both directions cancels that out.
+    """
+    if len(values) < 3:
+        return list(values)
+
+    window = max(1, int(round(config.TRACKING_SMOOTHING_WINDOW_S / max(dt, 1e-6))))
+    if window < 2:
+        return list(values)
+
+    def moving_average(series: list[float]) -> list[float]:
+        out: list[float] = []
+        half = window // 2
+        for index in range(len(series)):
+            start = max(0, index - half)
+            end = min(len(series), index + half + 1)
+            window_slice = series[start:end]
+            out.append(sum(window_slice) / len(window_slice))
+        return out
+
+    forward = moving_average(values)
+    backward = list(reversed(moving_average(list(reversed(forward)))))
+    return backward
+
+
+def _apply_deadzone(values: list[float]) -> list[float]:
+    """Hold position through micro-movement so the frame is not always drifting."""
+    if not values:
+        return values
+
+    held = [values[0]]
+    for value in values[1:]:
+        if abs(value - held[-1]) < config.TRACKING_DEADZONE_PX:
+            held.append(held[-1])
+        else:
+            held.append(value)
+    return held
+
+
+def _resample(
+    times: list[float],
+    values: list[float],
+    start_s: float,
+    end_s: float,
+) -> list[tuple[float, float]]:
+    """Interpolate the path onto a fine, evenly spaced grid."""
+    if not times:
+        return []
+
+    step = 1.0 / max(1.0, config.TRACKING_OUTPUT_FPS)
+    out: list[tuple[float, float]] = []
+    cursor = 0
+
+    time_s = start_s
+    while time_s <= end_s + 1e-6:
+        while cursor + 1 < len(times) and times[cursor + 1] < time_s:
+            cursor += 1
+
+        if cursor + 1 >= len(times) or time_s <= times[0]:
+            value = values[min(cursor, len(values) - 1)] if time_s >= times[0] else values[0]
+        else:
+            span = times[cursor + 1] - times[cursor]
+            ratio = 0.0 if span <= 0 else (time_s - times[cursor]) / span
+            ratio = min(1.0, max(0.0, ratio))
+            value = values[cursor] + (values[cursor + 1] - values[cursor]) * ratio
+
+        out.append((time_s, value))
+        time_s += step
+
+    return out
 
 
 def build_crop_path(video: Path, info: VideoInfo, crop_width: int) -> list[CropKeyframe]:
-    """Compute the crop path for a clip, or raise TrackingUnavailable."""
+    """Compute a smooth crop path for a clip, or raise TrackingUnavailable."""
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_track_") as tmp:
         work_dir = Path(tmp)
-        samples = _extract_frames(video, work_dir)
-        centers = _detect_centers(samples, info)
+        frames = _extract_frames(video, work_dir)
+        samples = _inspect_frames(frames, info)
 
-    if not centers:
+    if not samples:
+        raise TrackingUnavailable("No frames could be inspected")
+
+    if not any(sample.center_x is not None for sample in samples):
         raise TrackingUnavailable("No faces detected")
 
-    return _smooth(centers, info, crop_width)
+    dt = 1.0 / max(0.5, config.TRACKING_SAMPLE_FPS)
+    half = crop_width / 2.0
+    max_x = max(0, info.width - crop_width)
+    fallback = info.width / 2.0
+
+    points: list[tuple[float, float]] = []
+    carried = fallback
+
+    for shot in _split_shots(samples):
+        # A shot with no face holds the previous framing rather than snapping
+        # back to the centre of the frame and out again.
+        values = _fill_gaps(shot, carried)
+        values = _reject_outliers(values, info)
+        values = _clamp_speed(values, dt)
+        # Deadzone before smoothing: afterwards it would reintroduce the very
+        # steps the smoothing just removed.
+        values = _apply_deadzone(values)
+        values = _smooth_zero_phase(values, dt)
+        carried = values[-1]
+
+        times = [sample.time_s for sample in shot]
+        # Resample within the shot only, so the jump at a cut stays instant.
+        points.extend(_resample(times, values, times[0], times[-1]))
+
+    path: list[CropKeyframe] = []
+    previous_x: int | None = None
+    for time_s, center in points:
+        x = int(round(center - half))
+        x = max(0, min(max_x, x))
+        # Skip repeats - a static shot needs one command, not hundreds.
+        if previous_x is not None and x == previous_x:
+            continue
+        path.append(CropKeyframe(time_s=time_s, x=x))
+        previous_x = x
+
+    if not path:
+        raise TrackingUnavailable("Crop path came out empty")
+
+    return path
 
 
 def write_sendcmd(path: list[CropKeyframe], destination: Path) -> Path:

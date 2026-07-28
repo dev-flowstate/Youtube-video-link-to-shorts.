@@ -134,21 +134,35 @@ comes out the wrong colour.
 ## Face tracking
 
 The 9:16 crop follows the speaker instead of blindly taking the middle of the
-frame. It samples keyframes, finds the largest face with OpenCV's YuNet
-detector, then pans the crop window along a smoothed path.
+frame. It samples several times a second, finds the largest face with OpenCV's
+YuNet detector, then glides the crop window along a smoothed path.
 
-Sampling only keyframes is close to free — about **0.8s of tracking per 20s of
-video** — and because encoders put a keyframe at every scene cut, it lands a
-sample exactly where the framing needs to change.
+Three things make the motion read as smooth rather than stuttery:
 
-If no face is found, it falls back to centre framing rather than failing.
+- **Dense sampling.** Sparse samples mean the crop sits still then lurches.
+- **Interpolation.** The path is resampled to a fine grid, so the crop moves
+  in steps too small to see. FFmpeg's `crop` only takes discrete positions —
+  without this it snaps between them.
+- **Zero-phase smoothing.** The filter runs forwards *and* backwards, so it
+  removes jitter without the drag a one-way filter introduces.
+
+Scene cuts are detected and handled as hard boundaries: the crop repositions
+instantly across a cut, since gliding through one looks like a mistake. Short
+"shots" are merged first, because handheld camera movement otherwise trips the
+cut detector and produces constant snapping.
+
+If no face is found, framing holds its last position rather than jumping to
+the centre and back.
 
 | Setting | Does what |
 |---|---|
-| `TRACKING_SMOOTHING` | 0–1. Lower is steadier but slower to follow. The main jitter dial. |
-| `TRACKING_MAX_PAN_PX_PER_S` | Speed limit on the pan, so a bad detection can't whip the frame |
-| `TRACKING_MAX_JUMP_FRACTION` | Ignores faces this far from current framing — usually bystanders |
-| `TRACKING_SAMPLE_MODE` | `keyframes` (default, nearly free) or `dense` for fast action |
+| `TRACKING_SAMPLE_FPS` | Face checks per second. Below ~3 the crop lags the subject. |
+| `TRACKING_SMOOTHING_WINDOW_S` | The main dial. Larger is smoother and slower to react. |
+| `TRACKING_OUTPUT_FPS` | Path resolution. Below ~10 the motion reads as stuttery. |
+| `TRACKING_CUT_THRESHOLD` | Higher if camera shake is being mistaken for cuts |
+| `TRACKING_MIN_SHOT_S` | Shots shorter than this are treated as motion, not edits |
+| `TRACKING_MAX_PAN_PX_PER_S` | Speed limit, so a bad detection can't whip the frame |
+| `TRACKING_DEADZONE_PX` | Ignores micro-movement so the frame is not always drifting |
 
 The model lives in `ClipCaptioner/models/` and ships with the repo, so there's
 nothing to download.
@@ -170,9 +184,15 @@ Measured on an i5-1135G7, for a 20-second 4K clip:
 
 | Stage | Time |
 |---|---|
-| Face tracking (keyframe sampling) | 0.8s |
+| Face tracking at 4 samples/sec | 18.5s |
 | Render, software `libx264` | 73.6s |
 | Render, hardware `h264_qsv` | 25.6s |
+| **Whole pipeline** (transcribe + track + render) | **68s** |
+
+That works out to roughly 3.4× realtime end to end, so an hour of clips takes
+about three and a half hours. Tracking is the part you can trade away: drop
+`TRACKING_SAMPLE_FPS` to 2 to halve its cost, at the price of less responsive
+framing, or set `TRACK_FACES = False` to skip it entirely.
 
 ---
 

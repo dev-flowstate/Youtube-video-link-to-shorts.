@@ -20,7 +20,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://youtu.be/rTamPgdaLUs?si=XwSSSEkRIwvsQL-V"
+YOUTUBE_URL = "https://youtu.be/Rni7Fz7208c?si=RfD5qbBfVaoakq8A"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works

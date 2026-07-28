@@ -108,11 +108,10 @@ AUDIO_BITRATE = "160k"
 # the centre. Falls back to centre framing whenever no face is found.
 TRACK_FACES = True
 
-# "keyframes" decodes only keyframes, which is nearly free and lands a sample
-# right after every scene cut - the moments where reframing actually matters.
-# "dense" samples at TRACKING_DENSE_FPS and costs roughly 0.4x realtime.
-TRACKING_SAMPLE_MODE = "keyframes"
-TRACKING_DENSE_FPS = 2.0
+# How often to look for a face, in samples per second. Higher tracks fast
+# movement better and costs roughly linearly in detection time. Below about
+# 3 the crop visibly lags the subject.
+TRACKING_SAMPLE_FPS = 4.0
 
 # Frames are downscaled to this width before detection. Bigger finds smaller
 # faces but costs proportionally more.
@@ -121,17 +120,38 @@ TRACKING_FRAME_WIDTH = 480
 # Detections below this confidence are ignored.
 TRACKING_MIN_SCORE = 0.6
 
-# Smoothing factor for the crop path, 0-1. Lower is steadier but slower to
-# follow. This is the main dial between "jittery" and "sluggish".
-TRACKING_SMOOTHING = 0.25
+# Rate the finished crop path is written out at. The crop moves in steps, so
+# this needs to be high enough that the steps are invisible - below about 10
+# the motion reads as stuttery rather than smooth.
+TRACKING_OUTPUT_FPS = 15.0
 
-# Hard ceiling on how fast the crop may pan, in source pixels per second.
-# Without this, a mis-detection whips the frame across the shot.
-TRACKING_MAX_PAN_PX_PER_S = 420.0
+# Width of the smoothing window in seconds. This is the main dial: larger is
+# smoother and slower to react, smaller is snappier and more jittery.
+# Applied forwards and backwards, so it adds no lag.
+TRACKING_SMOOTHING_WINDOW_S = 1.2
+
+# Ceiling on how fast the crop may pan within a shot, in source pixels per
+# second. Stops a mis-detection whipping the frame across the scene.
+TRACKING_MAX_PAN_PX_PER_S = 320.0
 
 # Ignore a face this far from the current framing - almost always a
 # background person rather than the subject. Fraction of source width.
 TRACKING_MAX_JUMP_FRACTION = 0.45
+
+# Mean pixel difference between consecutive samples that counts as a scene
+# cut. At a cut the crop repositions instantly instead of sliding across the
+# frame, because gliding through a cut looks like a mistake. Set too low,
+# handheld camera movement registers as a cut and the crop snaps constantly.
+TRACKING_CUT_THRESHOLD = 40.0
+
+# Shots shorter than this are merged into the previous one. Real cuts are
+# rarely this close together; back-to-back detections are camera shake.
+TRACKING_MIN_SHOT_S = 0.7
+
+# Movements smaller than this are ignored, so the crop sits still during
+# normal talking-head micro-motion. Applied to the raw signal *before*
+# smoothing - afterwards it would put the steps back in.
+TRACKING_DEADZONE_PX = 12.0
 
 
 # ---------------------------------------------------------------------------
