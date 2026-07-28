@@ -23,7 +23,10 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 YOUTUBE_URL = "https://youtu.be/VT3CtCEh8HQ?si=9KYwYy006bc-SCgt"
 
 # Where the finished clips are written. Created automatically if missing.
-OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos") #add the path of the folder you want the videos in
+# Defaults to an "output" folder next to this script so the project works
+# anywhere. Replace with an absolute path to send clips elsewhere, e.g.
+#     OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos")
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 
 def _print_segments(segments: list[ReplaySegment]) -> None:

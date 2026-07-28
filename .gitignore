@@ -3,6 +3,7 @@
 # hundreds of MB, well past GitHub's hard 100 MB per-file limit.
 # ---------------------------------------------------------------------------
 Videos/
+output/
 *.mp4
 *.mkv
 *.webm

@@ -12,11 +12,15 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 
-# Folder holding the cut clips produced by YouTubeReplayDownloader.
-INPUT_DIR = Path(r"E:\Youtube Videos\Videos")
+_PROJECT_ROOT = Path(__file__).resolve().parent
+
+# Folder holding the cut clips produced by YouTubeReplayDownloader. Points at
+# that project's default output folder, so the two steps line up with no setup.
+# Override per run with: python main.py --input "D:\some\folder"
+INPUT_DIR = _PROJECT_ROOT.parent / "YouTubeReplayDownloader" / "output"
 
 # Folder the captioned vertical clips are written to.
-OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos\captioned")
+OUTPUT_DIR = _PROJECT_ROOT / "output"
 
 # ---------------------------------------------------------------------------
 # Transcription
