@@ -1,46 +1,26 @@
-# YouTube Most-Replayed Downloader
+# YouTube Highlight Downloader
 
-Download the **Most Replayed** segments from a normal YouTube video in the highest available quality.
+Finds the best moments in a YouTube video or past live broadcast and saves each
+one as its own MP4 clip.
 
-This tool reads YouTube's replay heatmap from page data, detects all significant replay peaks, and saves each peak as its own MP4 clip.
+## How moments are found
 
-## Features
+Three signals, tried best-first. Whichever works is reported when you run it.
 
-- Command-line Python project you can run from VS Code
-- Uses YouTube's built-in replay heatmap (no AI)
-- Detects all confident replay peaks
-- Automatically finds each clip's start/end based on replay activity
-- Downloads only the needed segments with `yt-dlp` + FFmpeg
-- Saves clips as MP4 in the folder where you run the script
-- Skips download entirely if replay data is unavailable
+| Signal | Used when | Quality |
+|---|---|---|
+| **Most replayed** | Normal videos, and older broadcasts | Best — a direct measure of what viewers rewatched |
+| **Chat activity** | Past live streams with chat replay | Strong — message-rate spikes are what human clippers scrub for |
+| **Audio loudness** | Anything else | Blunt — finds shouting and reactions, but also loud intros and music |
+
+Live streams have no most-replayed graph until well after the broadcast ends,
+which is why chat is the fallback rather than a failure.
 
 ## Requirements
 
-- Windows
-- Python 3.10+
-- FFmpeg on PATH
-
-## Setup
-
-1. Open this folder in VS Code:
-
-```text
-YouTubeReplayDownloader/
-```
-
-2. Install Python dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Install FFmpeg and add its `bin` folder to PATH.
-
-Verify:
-
-```bash
-ffmpeg -version
-```
+- Python 3.11+
+- FFmpeg on PATH (`winget install Gyan.FFmpeg`)
+- `pip install -r requirements.txt`
 
 ## Usage
 
@@ -52,7 +32,7 @@ ffmpeg -version
 python main.py
 ```
 
-Example output filename:
+Clips land in `output/` next to the script. Example filename:
 
 ```text
 MrBeast [03m42s-04m12s].mp4
@@ -60,58 +40,70 @@ MrBeast [03m42s-04m12s].mp4
 
 ## Supported URLs
 
-- Normal watch URLs like `https://www.youtube.com/watch?v=VIDEO_ID`
-- `youtu.be/VIDEO_ID`
+- `https://www.youtube.com/watch?v=VIDEO_ID`
+- `https://youtu.be/VIDEO_ID`
+- `https://www.youtube.com/live/VIDEO_ID` — past broadcasts
+- `https://www.youtube.com/embed/VIDEO_ID`
 
-Not supported:
+Not supported: Shorts, playlists, several URLs at once, and streams that are
+**still broadcasting** — a clip cannot be cut from a video that is still
+growing. Wait for the stream to end.
 
-- Shorts
-- Playlists
-- Multiple URLs at once
+## Settings
+
+Both near the top of `main.py`:
+
+| Setting | Purpose |
+|---|---|
+| `YOUTUBE_URL` | The video to clip |
+| `OUTPUT_DIR` | Where clips are written |
+| `MAX_CLIPS` | Cap on clips per video. A long stream can produce dozens of peaks, and each one costs a download plus a captioning pass. Only the strongest are kept. `None` disables the cap. |
 
 ## How it works
 
-1. `replay_fetcher.py` loads the YouTube page and extracts the replay heatmap JSON
-2. `peak_detector.py` smooths the graph and finds all significant peaks
-3. For each peak, it expands outward until replay activity returns near baseline
-4. `downloader.py` uses `yt-dlp --download-sections` to fetch only those ranges
-5. Clips are merged to MP4 in highest available video + audio quality
+1. `moment_finder.py` picks the best available signal for this video
+2. `replay_fetcher.py`, `chat_fetcher.py` or `audio_peaks.py` produces an
+   activity curve — all three emit the same `HeatmapPoint` shape, so the
+   detector does not care where the data came from
+3. `peak_detector.py` smooths the curve and finds significant peaks, expanding
+   each one outward until activity returns near baseline
+4. `downloader.py` fetches the source once and cuts every clip locally
 
 ## Project structure
 
 ```text
 YouTubeReplayDownloader/
-├── main.py
-├── replay_fetcher.py
-├── peak_detector.py
-├── downloader.py
-├── utils.py
-├── requirements.txt
-└── README.md
+├── main.py             entry point and settings
+├── moment_finder.py    picks the best available signal
+├── replay_fetcher.py   YouTube most-replayed heatmap
+├── chat_fetcher.py     live chat replay activity
+├── audio_peaks.py      audio loudness fallback
+├── activity.py         turns raw events into heatmap points
+├── peak_detector.py    finds peaks and their boundaries
+├── downloader.py       downloads and cuts the clips
+├── ffmpeg_utils.py     FFmpeg discovery
+├── utils.py            URL parsing, timestamps, filenames
+└── requirements.txt
 ```
 
 ## Notes
 
-- If a video has no Most Replayed graph, the script exits cleanly and downloads nothing
-- Segment-only downloading depends on YouTube format support; `yt-dlp` uses FFmpeg to produce the final clip
-- Re-running the same URL skips files that already exist
+- Re-running the same URL skips clips that already exist. If every clip is
+  present, the source video is not downloaded at all.
+- The source video is downloaded once in full, then clips are cut locally.
+  Downloading only the needed ranges was tried and abandoned: YouTube stalls
+  FFmpeg's HTTP client, which is what partial downloads depend on.
+- Chat and audio curves are smoothed over a fixed timespan rather than a fixed
+  number of buckets, and their first and last 90 seconds are damped. Without
+  that, the surge of people arriving and leaving a stream outscores every real
+  moment in it.
 
 ## Troubleshooting
 
-**FFmpeg not found**
+**FFmpeg not found** — ensure `ffmpeg -version` works in the same terminal.
 
-Install FFmpeg and ensure `ffmpeg -version` works in the same terminal you use in VS Code.
+**"This stream is still live"** — wait for the broadcast to end.
 
-**No replay data available**
+**Too many clips** — lower `MAX_CLIPS` in `main.py`.
 
-Not every video exposes the Most Replayed heatmap. Try another video.
-
-**Download failed**
-
-Update dependencies:
-
-```bash
-pip install -U yt-dlp
-```
-
-Then retry.
+**Download failed** — `pip install -U yt-dlp`, then retry.

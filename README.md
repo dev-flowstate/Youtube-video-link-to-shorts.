@@ -22,9 +22,21 @@ Two separate programs, run one after the other.
 
 ### Step 1 — `YouTubeReplayDownloader`
 
-Reads the video's most-replayed data, detects the peaks, and downloads just
-those sections as clips. Output is **landscape, no subtitles** — raw material
-for step 2.
+Finds the best moments in a video and saves each as a clip. Output is
+**landscape, no subtitles** — raw material for step 2.
+
+It works on normal videos *and* past live broadcasts, using whichever signal is
+available:
+
+| Signal | Used when |
+|---|---|
+| **Most replayed** | Normal videos and older broadcasts |
+| **Chat activity** | Past live streams — message-rate spikes |
+| **Audio loudness** | Anything else |
+
+Live streams have no most-replayed graph until well after they end, so chat
+stands in. Streams that are **still broadcasting** are rejected: a clip cannot
+be cut from a video that is still growing.
 
 ### Step 2 — `ClipCaptioner`
 
@@ -68,6 +80,12 @@ line near the top:
 
 ```python
 YOUTUBE_URL = "https://youtu.be/YOUR_VIDEO_ID"
+```
+
+A past-broadcast link works too:
+
+```python
+YOUTUBE_URL = "https://www.youtube.com/live/YOUR_VIDEO_ID"
 ```
 
 **2. Download the clips.**

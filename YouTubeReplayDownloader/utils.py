@@ -24,8 +24,9 @@ def parse_youtube_url(url: str) -> str:
     """
     Validate and normalize a YouTube watch URL.
 
-    Rejects Shorts, playlists, live-only paths, and non-YouTube links.
-    Returns the canonical watch URL.
+    Accepts watch, youtu.be, embed and /live/ links. A /live/ URL points at
+    the same video as its watch URL, so it normalizes to the watch form.
+    Rejects Shorts, playlists, and non-YouTube links.
     """
     url = url.strip()
     if not url:
@@ -52,9 +53,12 @@ def parse_youtube_url(url: str) -> str:
         video_id = ids[0] if ids else None
     elif path.startswith("/embed/"):
         video_id = path.split("/embed/")[1].split("/")[0]
+    elif path.startswith("/live/"):
+        # Live and past-broadcast links resolve to an ordinary video id.
+        video_id = path.split("/live/")[1].split("/")[0]
     else:
         raise InvalidYouTubeURL(
-            "Use a normal watch URL like https://www.youtube.com/watch?v=VIDEO_ID"
+            "Use a watch or live URL like https://www.youtube.com/watch?v=VIDEO_ID"
         )
 
     if not video_id or not re.fullmatch(r"[\w-]{11}", video_id):

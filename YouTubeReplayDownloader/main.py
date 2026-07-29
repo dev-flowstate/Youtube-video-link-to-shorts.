@@ -1,7 +1,8 @@
 """
-YouTube Most-Replayed clip downloader.
+YouTube highlight clip downloader.
 
-Edit YOUTUBE_URL below, then run:
+Works on normal videos and on past live broadcasts. Edit YOUTUBE_URL below,
+then run:
     python main.py
 """
 
@@ -12,8 +13,8 @@ from pathlib import Path
 
 from downloader import DownloadError, download_all_segments, fetch_video_title
 from ffmpeg_utils import FFmpegNotFoundError
+from moment_finder import NoMomentSignal, find_moments
 from peak_detector import ReplaySegment, detect_replay_segments
-from replay_fetcher import ReplayDataNotAvailable, fetch_replay_data
 from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 
 
@@ -27,6 +28,11 @@ YOUTUBE_URL = "https://youtu.be/Rni7Fz7208c?si=RfD5qbBfVaoakq8A"
 # anywhere. Replace with an absolute path to send clips elsewhere, e.g.
 #     OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos")
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+
+# Upper bound on clips from a single video. A long stream can yield dozens of
+# peaks, and every one costs a download plus a captioning pass, so only the
+# strongest are kept. Set to None for no limit.
+MAX_CLIPS: int | None = 15
 
 
 def _print_segments(segments: list[ReplaySegment]) -> None:
@@ -44,19 +50,28 @@ def _print_segments(segments: list[ReplaySegment]) -> None:
 def main() -> int:
     output_dir = OUTPUT_DIR
 
-    print("YouTube Most-Replayed Downloader")
-    print("=" * 34)
+    print("YouTube Highlight Downloader")
+    print("=" * 28)
     print(f"URL: {YOUTUBE_URL}")
     print(f"Output folder: {output_dir}\n")
 
     try:
         canonical_url = parse_youtube_url(YOUTUBE_URL)
-        replay_points = fetch_replay_data(canonical_url)
-        segments = detect_replay_segments(replay_points)
+
+        print("Looking for clip-worthy moments...")
+        moments = find_moments(canonical_url)
+        print(f"Signal: {moments.source} ({len(moments.points)} data points)")
+
+        segments = detect_replay_segments(moments.points)
 
         if not segments:
-            print("No significant replay peaks were detected for this video.")
+            print(f"No significant peaks were detected using {moments.source}.")
             return 0
+
+        if MAX_CLIPS is not None and len(segments) > MAX_CLIPS:
+            print(f"Keeping the {MAX_CLIPS} strongest of {len(segments)} peaks.")
+            strongest = sorted(segments, key=lambda s: -s.peak_score)[:MAX_CLIPS]
+            segments = sorted(strongest, key=lambda s: s.start_s)
 
         _print_segments(segments)
 
@@ -79,8 +94,8 @@ def main() -> int:
     except InvalidYouTubeURL as exc:
         print(f"Invalid URL: {exc}")
         return 1
-    except ReplayDataNotAvailable as exc:
-        print(f"No replay data available: {exc}")
+    except NoMomentSignal as exc:
+        print(f"Could not find moments: {exc}")
         print("Nothing was downloaded.")
         return 0
     except FFmpegNotFoundError as exc:
