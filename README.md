@@ -32,11 +32,11 @@ available:
 |---|---|
 | **Most replayed** | Normal videos and older broadcasts |
 | **Chat activity** | Past live streams — message-rate spikes |
-| **Audio loudness** | Anything else |
 
 Live streams have no most-replayed graph until well after they end, so chat
-stands in. Streams that are **still broadcasting** are rejected: a clip cannot
-be cut from a video that is still growing.
+stands in. Both signals measure real audience reaction. Streams that are
+**still broadcasting** are rejected: a clip cannot be cut from a video that is
+still growing.
 
 ### Step 2 — `ClipCaptioner`
 
@@ -49,27 +49,85 @@ that fit Shorts.
 
 ## Setup
 
-You need **Python 3.11+** and **FFmpeg**.
+> **Use `py -m pip`, not `pip`.** On Windows, `pip` is frequently not on your
+> PATH even when Python is installed correctly, which produces
+> `'pip' is not recognized as an internal or external command`. Running it as
+> `py -m pip` goes through the Python launcher and works regardless. Every
+> command below uses that form on purpose.
 
-```bash
-# 1. Get the code
-# The trailing "." is part of the repo name, and the folder is named
-# explicitly because Windows strips trailing dots from directory names.
-git clone https://github.com/dev-flowstate/Youtube-video-link-to-shorts..git youtube-shorts
-cd youtube-shorts
+### 1. Install Python 3.11 or newer
 
-# 2. FFmpeg (Windows)
-winget install Gyan.FFmpeg
+Download from [python.org/downloads](https://www.python.org/downloads/).
 
-# 3. Dependencies
-pip install -r YouTubeReplayDownloader/requirements.txt
-pip install -r ClipCaptioner/requirements.txt
+On the installer's **first screen, tick "Add python.exe to PATH"** — it is
+unchecked by default and skipping it causes most of the problems below.
+
+Check it worked, in a **new** terminal:
+
+```powershell
+py --version
 ```
 
-On macOS use `brew install ffmpeg`; on Debian/Ubuntu `sudo apt install ffmpeg`.
+You should see `Python 3.11` or higher. If `py` is not recognised, reinstall
+and make sure that PATH box is ticked.
 
-> The first captioning run downloads the Whisper speech model (~460 MB). That
-> happens once and is cached afterwards.
+### 2. Install FFmpeg
+
+```powershell
+winget install Gyan.FFmpeg
+```
+
+macOS: `brew install ffmpeg` · Debian/Ubuntu: `sudo apt install ffmpeg`
+
+Then **close and reopen your terminal** — PATH changes do not reach terminals
+that were already open. Check:
+
+```powershell
+ffmpeg -version
+```
+
+### 3. Get the code
+
+The trailing `.` is part of the repository name. The folder is named
+explicitly because Windows strips trailing dots from directory names.
+
+```powershell
+git clone https://github.com/dev-flowstate/Youtube-video-link-to-shorts..git youtube-shorts
+cd youtube-shorts
+```
+
+No git? Use the green **Code → Download ZIP** button on GitHub and unzip it.
+
+### 4. Install the dependencies
+
+```powershell
+py -m pip install --upgrade pip
+py -m pip install -r YouTubeReplayDownloader/requirements.txt
+py -m pip install -r ClipCaptioner/requirements.txt
+```
+
+That is roughly 500 MB, mostly PyTorch-free speech and vision libraries, so
+give it a few minutes.
+
+### 5. Check it
+
+```powershell
+py -c "import yt_dlp, numpy, scipy, faster_whisper, cv2; print('all good')"
+```
+
+> The first captioning run additionally downloads the Whisper speech model
+> (~460 MB). That happens once and is cached afterwards.
+
+### If something goes wrong
+
+| Message | Fix |
+|---|---|
+| `'pip' is not recognized` | Use `py -m pip` instead of `pip` |
+| `'python' is not recognized` | Use `py` instead of `python`, or reinstall with "Add python.exe to PATH" ticked |
+| `'py' is not recognized` | Python is not installed, or was installed without the launcher. Reinstall from python.org. |
+| `ffmpeg not found` | Reopen your terminal. If it persists, run `winget install Gyan.FFmpeg` again. |
+| `No module named 'faster_whisper'` | Step 4 did not finish. Re-run it and read the output for the real error. |
+| Installs succeed but imports fail | You likely have several Pythons. Run `py -0p` to list them, and use `py -m pip` so installer and interpreter always match. |
 
 ---
 
@@ -90,9 +148,9 @@ YOUTUBE_URL = "https://www.youtube.com/live/YOUR_VIDEO_ID"
 
 **2. Download the clips.**
 
-```bash
+```powershell
 cd YouTubeReplayDownloader
-python main.py
+py main.py
 ```
 
 You'll see the detected peaks, then the clips appear in
@@ -100,9 +158,9 @@ You'll see the detected peaks, then the clips appear in
 
 **3. Add captions and go vertical.**
 
-```bash
+```powershell
 cd ../ClipCaptioner
-python main.py
+py main.py
 ```
 
 Finished Shorts land in `ClipCaptioner/output/`, ready to upload.
@@ -111,18 +169,36 @@ That's it. For the next video, change the link and repeat.
 
 ---
 
+## What you get
+
+By default, the **5 hottest moments**, each capped at **90 seconds**.
+
+Clips are trimmed around their peak, so the best bit stays in frame, and
+overlapping candidates are dropped — five distinct moments rather than five
+that partly repeat each other. Short clips hold attention, which is the whole
+point of the format.
+
+Both are near the top of `YouTubeReplayDownloader/main.py`:
+
+```python
+MAX_CLIPS = 5             # set to None for every peak found
+MAX_CLIP_SECONDS = 90.0   # per-clip ceiling
+```
+
+---
+
 ## Useful options
 
 Caption clips from somewhere else:
 
-```bash
-python main.py --input "D:\my\clips" --output "D:\my\shorts"
+```powershell
+py main.py --input "D:\my\clips" --output "D:\my\shorts"
 ```
 
 Do a single clip first to check the look before committing to a whole batch:
 
-```bash
-python main.py --only "02m49s"
+```powershell
+py main.py --only "02m49s"
 ```
 
 Re-running is safe — anything already rendered is skipped, not redone.

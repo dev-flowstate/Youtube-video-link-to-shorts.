@@ -127,6 +127,35 @@ def _expand_segment(
     return float(starts[left]), float(ends[right])
 
 
+def _trim_to_peak(
+    start_s: float,
+    end_s: float,
+    peak_s: float,
+    max_seconds: float,
+) -> tuple[float, float]:
+    """Shorten a segment to a budget, keeping the peak inside it.
+
+    The window is centred on the peak, then slid back inside the original
+    bounds if centring would push it past either edge. Sliding rather than
+    clipping means a peak near the start still gets a full-length clip.
+    """
+    if max_seconds <= 0 or (end_s - start_s) <= max_seconds:
+        return start_s, end_s
+
+    half = max_seconds / 2.0
+    new_start = peak_s - half
+    new_end = peak_s + half
+
+    if new_start < start_s:
+        new_start = start_s
+        new_end = start_s + max_seconds
+    elif new_end > end_s:
+        new_end = end_s
+        new_start = end_s - max_seconds
+
+    return max(start_s, new_start), min(end_s, new_end)
+
+
 def _segments_overlap(a: ReplaySegment, b: ReplaySegment, overlap_ratio: float = 0.5) -> bool:
     overlap = min(a.end_s, b.end_s) - max(a.start_s, b.start_s)
     if overlap <= 0:
@@ -169,12 +198,14 @@ def detect_replay_segments(
     min_height_ratio: float = 0.14,
     min_distance_buckets: int = 2,
     min_segment_seconds: float = 4.0,
+    max_segment_seconds: float = 90.0,
 ) -> list[ReplaySegment]:
     """
     Find all confident replay peaks and their start/end boundaries.
 
     Boundaries are chosen where smoothed replay activity rises above a
-    baseline-derived threshold and returns near normal again.
+    baseline-derived threshold and returns near normal again, then trimmed
+    around the peak so no clip outstays a viewer's attention.
     """
     if len(points) < 4:
         return []
@@ -210,16 +241,36 @@ def detect_replay_segments(
         if end_s - start_s < min_segment_seconds:
             continue
 
+        peak_s = float(centers[peak_index])
+        start_s, end_s = _trim_to_peak(start_s, end_s, peak_s, max_segment_seconds)
+
         segments.append(
             ReplaySegment(
                 start_s=start_s,
                 end_s=end_s,
-                peak_s=float(centers[peak_index]),
+                peak_s=peak_s,
                 peak_score=float(smoothed[peak_index]),
                 prominence=_peak_prominence(smoothed, peak_index),
             )
         )
 
     segments = _merge_overlapping(segments)
-    segments.sort(key=lambda s: s.start_s)
-    return segments
+
+    # Merging spans two windows, so it can exceed the budget again.
+    trimmed: list[ReplaySegment] = []
+    for segment in segments:
+        start_s, end_s = _trim_to_peak(
+            segment.start_s, segment.end_s, segment.peak_s, max_segment_seconds
+        )
+        trimmed.append(
+            ReplaySegment(
+                start_s=start_s,
+                end_s=end_s,
+                peak_s=segment.peak_s,
+                peak_score=segment.peak_score,
+                prominence=segment.prominence,
+            )
+        )
+
+    trimmed.sort(key=lambda s: s.start_s)
+    return trimmed

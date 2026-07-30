@@ -11,26 +11,29 @@ the spoken word highlighted, centre-crops to 9:16, and encodes the result.
 
 - Python 3.11+
 - FFmpeg on PATH (`winget install Gyan.FFmpeg`)
-- `pip install -r requirements.txt`
+- `py -m pip install -r requirements.txt`
+
+Use `py -m pip`, not bare `pip` — on Windows `pip` is frequently not on PATH
+even when Python is installed correctly.
 
 The Whisper weights download automatically on first run (~460 MB for `small`)
 into `~/.cache/huggingface`.
 
 ## Usage
 
-```bash
-python main.py
+```powershell
+py main.py
 ```
 
 Reads every `.mp4` in `INPUT_DIR` and writes captioned clips to `OUTPUT_DIR`.
 Already-rendered files are skipped, so re-running is cheap.
 
-```bash
+```powershell
 # Override folders
-python main.py --input "E:\Youtube Videos\Videos" --output "E:\out"
+py main.py --input "E:\Youtube Videos\Videos" --output "E:\out"
 
 # Process a single clip
-python main.py --only "02m49s"
+py main.py --only "02m49s"
 ```
 
 ## Configuration

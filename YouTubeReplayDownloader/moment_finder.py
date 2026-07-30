@@ -2,7 +2,11 @@
 
 Most-replayed data is preferred whenever it exists: it is a direct measure of
 what viewers rewatched. Live streams do not have one until well after the
-broadcast ends, so chat and audio stand in.
+broadcast ends, so chat activity stands in.
+
+Both signals measure audience reaction. Loudness detection was tried and
+removed: it flags loud intros and background music as readily as real
+moments, and a wrong clip costs more than a missing one.
 """
 
 from __future__ import annotations
@@ -11,7 +15,6 @@ from dataclasses import dataclass
 
 import yt_dlp
 
-import audio_peaks
 import chat_fetcher
 from replay_fetcher import HeatmapPoint, ReplayDataNotAvailable, fetch_replay_data
 from utils import parse_youtube_url
@@ -70,11 +73,8 @@ def find_moments(youtube_url: str) -> MomentData:
     except chat_fetcher.ChatDataNotAvailable as exc:
         attempts.append(f"chat: {exc}")
 
-    try:
-        points = audio_peaks.fetch_audio_activity(youtube_url, duration_s)
-        return MomentData(points=points, source="audio loudness", duration_s=duration_s)
-    except audio_peaks.AudioAnalysisFailed as exc:
-        attempts.append(f"audio: {exc}")
-
     detail = "\n  ".join(attempts)
-    raise NoMomentSignal(f"No usable signal for this video:\n  {detail}")
+    raise NoMomentSignal(
+        f"No usable signal for this video:\n  {detail}\n"
+        "  A video needs either a most-replayed graph or chat replay."
+    )

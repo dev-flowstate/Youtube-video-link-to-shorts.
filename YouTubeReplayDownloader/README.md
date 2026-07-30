@@ -5,22 +5,28 @@ one as its own MP4 clip.
 
 ## How moments are found
 
-Three signals, tried best-first. Whichever works is reported when you run it.
+Two signals, tried best-first. Whichever works is reported when you run it.
 
 | Signal | Used when | Quality |
 |---|---|---|
 | **Most replayed** | Normal videos, and older broadcasts | Best — a direct measure of what viewers rewatched |
 | **Chat activity** | Past live streams with chat replay | Strong — message-rate spikes are what human clippers scrub for |
-| **Audio loudness** | Anything else | Blunt — finds shouting and reactions, but also loud intros and music |
 
 Live streams have no most-replayed graph until well after the broadcast ends,
 which is why chat is the fallback rather than a failure.
+
+Both measure real audience reaction. Loudness detection was tried and removed:
+it flagged loud intros and background music as readily as real moments, and a
+wrong clip costs more than a missing one.
 
 ## Requirements
 
 - Python 3.11+
 - FFmpeg on PATH (`winget install Gyan.FFmpeg`)
-- `pip install -r requirements.txt`
+- `py -m pip install -r requirements.txt`
+
+Use `py -m pip`, not bare `pip` — on Windows `pip` is often not on PATH even
+when Python is installed correctly.
 
 ## Usage
 
@@ -28,8 +34,8 @@ which is why chat is the fallback rather than a failure.
 2. Edit `YOUTUBE_URL` near the top
 3. Run:
 
-```bash
-python main.py
+```powershell
+py main.py
 ```
 
 Clips land in `output/` next to the script. Example filename:
@@ -57,16 +63,21 @@ Both near the top of `main.py`:
 |---|---|
 | `YOUTUBE_URL` | The video to clip |
 | `OUTPUT_DIR` | Where clips are written |
-| `MAX_CLIPS` | Cap on clips per video. A long stream can produce dozens of peaks, and each one costs a download plus a captioning pass. Only the strongest are kept. `None` disables the cap. |
+| `MAX_CLIPS` | How many clips to keep. Only the strongest peaks survive, so this is "the N hottest moments". `None` keeps every peak. |
+| `MAX_CLIP_SECONDS` | Per-clip ceiling. Clips are trimmed around their peak so the best bit stays in frame. |
+
+Overlapping candidates are dropped during selection, so you get distinct
+moments rather than several that partly repeat each other.
 
 ## How it works
 
 1. `moment_finder.py` picks the best available signal for this video
-2. `replay_fetcher.py`, `chat_fetcher.py` or `audio_peaks.py` produces an
-   activity curve — all three emit the same `HeatmapPoint` shape, so the
-   detector does not care where the data came from
-3. `peak_detector.py` smooths the curve and finds significant peaks, expanding
-   each one outward until activity returns near baseline
+2. `replay_fetcher.py` or `chat_fetcher.py` produces an activity curve — both
+   emit the same `HeatmapPoint` shape, so the detector does not care where the
+   data came from
+3. `peak_detector.py` smooths the curve, finds significant peaks, expands each
+   outward until activity returns near baseline, then trims to
+   `MAX_CLIP_SECONDS` around the peak
 4. `downloader.py` fetches the source once and cuts every clip locally
 
 ## Project structure
@@ -77,9 +88,8 @@ YouTubeReplayDownloader/
 ├── moment_finder.py    picks the best available signal
 ├── replay_fetcher.py   YouTube most-replayed heatmap
 ├── chat_fetcher.py     live chat replay activity
-├── audio_peaks.py      audio loudness fallback
 ├── activity.py         turns raw events into heatmap points
-├── peak_detector.py    finds peaks and their boundaries
+├── peak_detector.py    finds peaks, boundaries and clip length
 ├── downloader.py       downloads and cuts the clips
 ├── ffmpeg_utils.py     FFmpeg discovery
 ├── utils.py            URL parsing, timestamps, filenames
@@ -93,17 +103,23 @@ YouTubeReplayDownloader/
 - The source video is downloaded once in full, then clips are cut locally.
   Downloading only the needed ranges was tried and abandoned: YouTube stalls
   FFmpeg's HTTP client, which is what partial downloads depend on.
-- Chat and audio curves are smoothed over a fixed timespan rather than a fixed
-  number of buckets, and their first and last 90 seconds are damped. Without
-  that, the surge of people arriving and leaving a stream outscores every real
-  moment in it.
+- Chat curves are smoothed over a fixed timespan rather than a fixed number of
+  buckets, and their first and last 90 seconds are damped. Without that, the
+  surge of people arriving and leaving a stream outscores every real moment
+  in it.
 
 ## Troubleshooting
+
+**`'pip' is not recognized`** — use `py -m pip` instead of `pip`.
 
 **FFmpeg not found** — ensure `ffmpeg -version` works in the same terminal.
 
 **"This stream is still live"** — wait for the broadcast to end.
 
-**Too many clips** — lower `MAX_CLIPS` in `main.py`.
+**"No usable signal"** — the video has neither a most-replayed graph nor chat
+replay. Nothing can be detected from it.
 
-**Download failed** — `pip install -U yt-dlp`, then retry.
+**Want more or longer clips** — raise `MAX_CLIPS` and `MAX_CLIP_SECONDS` in
+`main.py`.
+
+**Download failed** — `py -m pip install -U yt-dlp`, then retry.

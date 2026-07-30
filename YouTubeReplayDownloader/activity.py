@@ -1,8 +1,8 @@
 """Turn raw activity timestamps into heatmap points.
 
-Chat messages and audio loudness are different signals, but both reduce to
-"how much was happening at time T". Expressing them as HeatmapPoint lets the
-existing peak detector consume them unchanged.
+Chat messages reduce to "how much was happening at time T". Expressing that
+as HeatmapPoint lets the existing peak detector consume them unchanged,
+exactly as it does YouTube's own replay graph.
 """
 
 from __future__ import annotations

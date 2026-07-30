@@ -21,7 +21,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://youtu.be/Rni7Fz7208c?si=RfD5qbBfVaoakq8A"
+YOUTUBE_URL = "https://youtu.be/lwzADAdjqvE?si=P15lzh3SobT8P2ur"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -29,10 +29,38 @@ YOUTUBE_URL = "https://youtu.be/Rni7Fz7208c?si=RfD5qbBfVaoakq8A"
 #     OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos")
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
-# Upper bound on clips from a single video. A long stream can yield dozens of
-# peaks, and every one costs a download plus a captioning pass, so only the
-# strongest are kept. Set to None for no limit.
-MAX_CLIPS: int | None = 15
+# How many clips to keep from a single video. Only the strongest peaks
+# survive, so this is "the N hottest moments". Set to None for no limit.
+MAX_CLIPS: int | None = 5
+
+# Longest a clip may run, in seconds. Clips are trimmed around their peak, so
+# the best moment stays in frame. Short clips hold attention; 90s is about the
+# ceiling before viewers drop off.
+MAX_CLIP_SECONDS = 90.0
+
+
+def _pick_hottest(segments: list[ReplaySegment], limit: int) -> list[ReplaySegment]:
+    """Take the strongest peaks, skipping any that repeat an earlier pick.
+
+    Two adjacent peaks can survive detection with windows that overlap. With
+    only a handful of slots, any shared footage wastes part of the output, so
+    candidates must not touch a pick already made. Returning four distinct
+    clips beats five that partly repeat each other.
+    """
+    chosen: list[ReplaySegment] = []
+
+    for candidate in sorted(segments, key=lambda s: -s.peak_score):
+        if len(chosen) >= limit:
+            break
+
+        overlaps = any(
+            min(candidate.end_s, picked.end_s) > max(candidate.start_s, picked.start_s)
+            for picked in chosen
+        )
+        if not overlaps:
+            chosen.append(candidate)
+
+    return sorted(chosen, key=lambda s: s.start_s)
 
 
 def _print_segments(segments: list[ReplaySegment]) -> None:
@@ -62,16 +90,18 @@ def main() -> int:
         moments = find_moments(canonical_url)
         print(f"Signal: {moments.source} ({len(moments.points)} data points)")
 
-        segments = detect_replay_segments(moments.points)
+        segments = detect_replay_segments(
+            moments.points,
+            max_segment_seconds=MAX_CLIP_SECONDS,
+        )
 
         if not segments:
             print(f"No significant peaks were detected using {moments.source}.")
             return 0
 
         if MAX_CLIPS is not None and len(segments) > MAX_CLIPS:
-            print(f"Keeping the {MAX_CLIPS} strongest of {len(segments)} peaks.")
-            strongest = sorted(segments, key=lambda s: -s.peak_score)[:MAX_CLIPS]
-            segments = sorted(strongest, key=lambda s: s.start_s)
+            print(f"Keeping the {MAX_CLIPS} hottest of {len(segments)} peaks.")
+            segments = _pick_hottest(segments, MAX_CLIPS)
 
         _print_segments(segments)
 
