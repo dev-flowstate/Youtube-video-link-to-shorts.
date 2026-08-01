@@ -43,6 +43,7 @@ Everything tunable lives in `config.py`.
 | Setting | Purpose |
 |---|---|
 | `WHISPER_MODEL` | `base` / `small` / `medium`. Bigger is more accurate and much slower on CPU. |
+| `WHISPER_VOCABULARY` | Names and jargon to expect. Small models mangle proper nouns, which is exactly what a podcast clip is about — listing them is the difference between `WILLEY` and `Willy`, at no runtime cost. |
 | `MAX_WORDS_PER_GROUP` | Words on screen at once. 2-3 reads fastest. |
 | `FONT_NAME`, `FONT_SIZE` | `Arial Black` and `Impact` ship with Windows. |
 | `COLOR_ACTIVE` | Highlight colour, in ASS `BBGGRR` order — **not** web hex. |
@@ -63,7 +64,7 @@ Everything tunable lives in `config.py`.
 | `caption_builder.py` | Groups words into short on-screen bursts |
 | `ass_writer.py` | Emits the ASS subtitle file |
 | `splitter.py` | Splits long clips on speech gaps |
-| `tracker.py` | Face detection and the smoothed crop path |
+| `tracker.py` | Face detection, subject choice, and the smoothed crop path |
 | `renderer.py` | Crop, burn-in, encode |
 | `ffmpeg_tools.py` | FFmpeg discovery, execution, probing |
 | `models/` | YuNet face detection model (227 KB, ships with the repo) |
@@ -84,3 +85,11 @@ Details that are easy to get wrong if you edit this:
 - **Hardware encoding is probed, not assumed.** `h264_qsv` is listed in most
   FFmpeg builds but fails without a matching iGPU and driver, so the renderer
   encodes a throwaway frame once to check before relying on it.
+- **Transcription runs a clip ahead of encoding.** Transcription is CPU-bound
+  and encoding runs on the GPU, so overlapping them costs nothing in
+  contention and recovers most of the transcription time. A one-item queue
+  keeps at most one clip's work in flight.
+- **Face choice follows the nearest subject, not the largest.** With two
+  people at similar distance, tiny size changes flip which is momentarily
+  bigger, and the crop swings between them. Size only decides after a cut,
+  when there is no previous framing to stay near.

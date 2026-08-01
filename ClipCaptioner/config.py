@@ -37,6 +37,14 @@ WHISPER_COMPUTE_TYPE = "int8"
 # Force a language to skip auto-detection. None means detect.
 WHISPER_LANGUAGE: str | None = "en"
 
+# Names and jargon Whisper should expect. The model biases towards this text
+# when decoding, which is the difference between "WILLEY" and "Willy".
+# Proper nouns are exactly what a podcast clip is about and exactly what a
+# small model gets wrong, so list the people, places and brands in your videos.
+WHISPER_VOCABULARY: list[str] = [
+    # "MrBeast", "Chandler", "Karl", "Chris",
+]
+
 # ---------------------------------------------------------------------------
 # Caption grouping
 # ---------------------------------------------------------------------------

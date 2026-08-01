@@ -178,6 +178,10 @@ overlapping candidates are dropped — five distinct moments rather than five
 that partly repeat each other. Short clips hold attention, which is the whole
 point of the format.
 
+Edges are aligned to pauses in speech, so clips start and end on a sentence
+instead of mid-word, and candidates that are mostly silence are skipped before
+the hottest are picked.
+
 Both are near the top of `YouTubeReplayDownloader/main.py`:
 
 ```python

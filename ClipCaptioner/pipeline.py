@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import queue
 import tempfile
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import audio
@@ -38,7 +41,8 @@ def transcribe_clip(clip: Path) -> list[CaptionGroup]:
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_audio_") as tmp:
         wav_path = Path(tmp) / "audio.wav"
         audio.extract_audio(clip, wav_path)
-        words = transcriber.transcribe_words(wav_path)
+        # The filename carries the video title, which primes the decoder.
+        words = transcriber.transcribe_words(wav_path, title=clip.stem)
 
     return caption_builder.build_groups(words)
 
@@ -62,10 +66,14 @@ def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None
 
 def process_clip(clip: Path, output_dir: Path) -> list[Path]:
     """Caption one clip, returning every rendered file."""
+    return render_clip(clip, transcribe_clip(clip), output_dir)
+
+
+def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> list[Path]:
+    """Render an already-transcribed clip."""
     info = ffmpeg_tools.probe_video(clip)
     duration = info.duration_s
 
-    groups = transcribe_clip(clip)
     parts = splitter.split_into_parts(groups, duration)
 
     pending = [
@@ -94,6 +102,35 @@ def process_clip(clip: Path, output_dir: Path) -> list[Path]:
     return rendered
 
 
+def _transcribe_ahead(clips: list[Path]) -> Iterator[tuple[Path, list[CaptionGroup] | Exception]]:
+    """Transcribe the next clip while the current one is still encoding.
+
+    Transcription is CPU-bound and encoding runs on the GPU, so they barely
+    contend. Overlapping them recovers most of the transcription time. The
+    queue holds one item, which keeps at most one clip's work in flight.
+    """
+    results: queue.Queue = queue.Queue(maxsize=1)
+
+    def worker() -> None:
+        for clip in clips:
+            try:
+                results.put((clip, transcribe_clip(clip)))
+            except Exception as exc:  # handed to the consumer, not swallowed
+                results.put((clip, exc))
+        results.put(None)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    while True:
+        item = results.get()
+        if item is None:
+            break
+        yield item
+
+    thread.join()
+
+
 def run(input_dir: Path | None = None, output_dir: Path | None = None) -> list[Path]:
     """Caption every clip in the input folder."""
     input_dir = input_dir or config.INPUT_DIR
@@ -108,15 +145,18 @@ def run(input_dir: Path | None = None, output_dir: Path | None = None) -> list[P
     print(f"Found {len(clips)} clip(s) in {input_dir}\n")
 
     produced: list[Path] = []
-    for position, clip in enumerate(clips, start=1):
+    for position, (clip, outcome) in enumerate(_transcribe_ahead(clips), start=1):
         print(f"[{position}/{len(clips)}] {clip.name}")
-        try:
-            produced.extend(process_clip(clip, output_dir))
-        except (
-            ffmpeg_tools.FFmpegError,
-            transcriber.TranscriptionError,
-        ) as exc:
+
+        if isinstance(outcome, Exception):
             # One bad clip should not abandon the rest of the batch.
+            print(f"    skipped: {outcome}")
+            print()
+            continue
+
+        try:
+            produced.extend(render_clip(clip, outcome, output_dir))
+        except ffmpeg_tools.FFmpegError as exc:
             print(f"    skipped: {exc}")
         print()
 

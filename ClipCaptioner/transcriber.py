@@ -44,7 +44,22 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-def transcribe_words(wav_path: Path) -> list[Word]:
+def _initial_prompt(title: str | None) -> str | None:
+    """Prime the decoder with words it should expect.
+
+    Whisper conditions on this text, which pulls proper nouns towards the
+    right spelling. Costs nothing at runtime.
+    """
+    parts = [part for part in (config.WHISPER_VOCABULARY or ()) if part.strip()]
+    if title:
+        parts.insert(0, title)
+
+    if not parts:
+        return None
+    return ", ".join(parts) + "."
+
+
+def transcribe_words(wav_path: Path, title: str | None = None) -> list[Word]:
     """Transcribe audio into individually timed words."""
     model = _load_model()
 
@@ -54,6 +69,7 @@ def transcribe_words(wav_path: Path) -> list[Word]:
         word_timestamps=True,
         # Skips long silences, which keeps timestamps from drifting.
         vad_filter=True,
+        initial_prompt=_initial_prompt(title),
     )
 
     words: list[Word] = []

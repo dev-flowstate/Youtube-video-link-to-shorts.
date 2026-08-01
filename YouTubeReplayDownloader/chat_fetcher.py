@@ -23,6 +23,14 @@ class ChatDataNotAvailable(Exception):
     """Raised when chat replay cannot be retrieved for a video."""
 
 
+# Chat reacts after the fact: a viewer sees something, then types. Left
+# uncorrected, every chat-derived clip lands late and the moment it exists for
+# sits near the start of the window, or just before it. Shifting messages
+# earlier puts the peak back over its cause. Tune by clipping one stream at a
+# few values and seeing which centres best.
+REACTION_LAG_S = 4.0
+
+
 def _download_chat(youtube_url: str, work_dir: Path) -> Path:
     """Fetch the live chat replay track without downloading the video."""
     base = work_dir / f"chat_{uuid.uuid4().hex}"
@@ -100,7 +108,8 @@ def fetch_chat_activity(youtube_url: str, duration_s: float) -> list[HeatmapPoin
             f"Only {len(offsets)} chat message(s) found - too few to find peaks."
         )
 
-    points = activity.timestamps_to_points(offsets, duration_s)
+    corrected = [max(0.0, offset - REACTION_LAG_S) for offset in offsets]
+    points = activity.timestamps_to_points(corrected, duration_s)
     if not points:
         raise ChatDataNotAvailable("Chat activity curve came out empty.")
 

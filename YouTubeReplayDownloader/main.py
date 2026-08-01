@@ -11,6 +11,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import tempfile
+
+import speech
 from downloader import DownloadError, download_all_segments, fetch_video_title
 from ffmpeg_utils import FFmpegNotFoundError
 from moment_finder import NoMomentSignal, find_moments
@@ -21,7 +24,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://youtu.be/lwzADAdjqvE?si=P15lzh3SobT8P2ur"
+YOUTUBE_URL = "https://youtu.be/GOqEl4ADyVk?si=Qf2AdmWeTyrFDqjE"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -37,6 +40,11 @@ MAX_CLIPS: int | None = 5
 # the best moment stays in frame. Short clips hold attention; 90s is about the
 # ceiling before viewers drop off.
 MAX_CLIP_SECONDS = 90.0
+
+# Align clip edges with pauses in speech so they start and end on a sentence
+# rather than mid-word, and skip candidates that are mostly silence. Costs one
+# audio-only download before the video is fetched.
+SNAP_TO_SPEECH = True
 
 
 def _pick_hottest(segments: list[ReplaySegment], limit: int) -> list[ReplaySegment]:
@@ -61,6 +69,36 @@ def _pick_hottest(segments: list[ReplaySegment], limit: int) -> list[ReplaySegme
             chosen.append(candidate)
 
     return sorted(chosen, key=lambda s: s.start_s)
+
+
+def _refine_with_speech(
+    canonical_url: str,
+    segments: list[ReplaySegment],
+) -> list[ReplaySegment]:
+    """Align clip edges with pauses and drop candidates that are mostly silent.
+
+    Analysing the audio track alone is cheap next to the full video download
+    that follows, and it happens before the hottest clips are chosen so a
+    rejected candidate frees its slot for the next best one.
+    """
+    if not SNAP_TO_SPEECH:
+        return segments
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="speech_") as tmp:
+            audio_path = speech.download_audio(canonical_url, Path(tmp))
+            speech_map = speech.analyse_audio(audio_path)
+    except speech.SpeechAnalysisFailed as exc:
+        # Rough boundaries beat no clips at all.
+        print(f"Speech analysis unavailable ({exc}) - using raw boundaries.")
+        return segments
+
+    refined, dropped = speech.refine_segments(segments, speech_map, MAX_CLIP_SECONDS)
+    print(
+        f"Speech: {len(speech_map.silences)} pause(s) found; "
+        f"edges aligned, {dropped} silent candidate(s) dropped."
+    )
+    return refined
 
 
 def _print_segments(segments: list[ReplaySegment]) -> None:
@@ -90,13 +128,25 @@ def main() -> int:
         moments = find_moments(canonical_url)
         print(f"Signal: {moments.source} ({len(moments.points)} data points)")
 
+        # Leave room for boundary snapping to widen a clip out to the nearest
+        # pause. Without this headroom every outward snap would breach the
+        # length cap and be rejected, so edges could only ever move inwards.
+        detect_budget = MAX_CLIP_SECONDS
+        if SNAP_TO_SPEECH:
+            detect_budget -= 2 * speech.SNAP_TOLERANCE_S
+
         segments = detect_replay_segments(
             moments.points,
-            max_segment_seconds=MAX_CLIP_SECONDS,
+            max_segment_seconds=detect_budget,
         )
 
         if not segments:
             print(f"No significant peaks were detected using {moments.source}.")
+            return 0
+
+        segments = _refine_with_speech(canonical_url, segments)
+        if not segments:
+            print("Every candidate was mostly silence. Nothing to download.")
             return 0
 
         if MAX_CLIPS is not None and len(segments) > MAX_CLIPS:

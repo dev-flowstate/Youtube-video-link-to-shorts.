@@ -65,9 +65,32 @@ Both near the top of `main.py`:
 | `OUTPUT_DIR` | Where clips are written |
 | `MAX_CLIPS` | How many clips to keep. Only the strongest peaks survive, so this is "the N hottest moments". `None` keeps every peak. |
 | `MAX_CLIP_SECONDS` | Per-clip ceiling. Clips are trimmed around their peak so the best bit stays in frame. |
+| `SNAP_TO_SPEECH` | Align clip edges with pauses so they start and end on a sentence, and skip candidates that are mostly silence. |
 
 Overlapping candidates are dropped during selection, so you get distinct
 moments rather than several that partly repeat each other.
+
+## Speech-aligned edges
+
+Activity peaks say *when* something happened, not where the sentence around it
+starts. Cutting on the raw boundary lands mid-word, which is the clearest
+giveaway of an auto-generated clip.
+
+Before downloading the video, the audio track alone is fetched and scanned for
+pauses, and each clip's edges move to the nearest one. Edges prefer to widen
+rather than narrow, so a clip gains its opening words instead of losing them.
+
+Silence is measured **relative to the material's own loudness**, not at a fixed
+dB. Real vlog audio carries constant room tone — one clip measured here
+averaged -18 dB and never dropped below -30 dB, so a fixed threshold finds
+nothing on some sources and flags quiet speech as a pause on others.
+
+Candidates that are mostly silence are dropped before the hottest are chosen,
+so a dud frees its slot for the next best moment instead of wasting one.
+
+Note that peak detection deliberately targets a shorter clip than
+`MAX_CLIP_SECONDS` allows, leaving headroom for edges to widen out to a pause
+while staying under the cap.
 
 ## How it works
 

@@ -94,6 +94,7 @@ def _inspect_frames(samples: list[tuple[float, Path]], info: VideoInfo) -> list[
 
     detector = None
     previous_thumb = None
+    previous_center: float | None = None
     results: list[_Sample] = []
 
     for time_s, frame_path in samples:
@@ -122,14 +123,42 @@ def _inspect_frames(samples: list[tuple[float, Path]], info: VideoInfo) -> list[
         _, faces = detector.detect(image)
         center_x = None
         if faces is not None and len(faces) > 0:
-            # Largest face wins - the speaker is nearer the camera than bystanders.
-            best = max(faces, key=lambda face: float(face[2]) * float(face[3]))
-            center_small = float(best[0]) + float(best[2]) / 2.0
-            center_x = center_small / width * info.width
+            scale = info.width / width
+            # After a cut there is no framing to stay near, so size decides.
+            anchor = None if starts_shot else previous_center
+            best = _choose_face(faces, anchor, scale, info.width)
+            center_x = (float(best[0]) + float(best[2]) / 2.0) * scale
+
+        if center_x is not None:
+            previous_center = center_x
 
         results.append(_Sample(time_s=time_s, center_x=center_x, starts_shot=starts_shot))
 
     return results
+
+
+def _choose_face(faces, anchor: float | None, scale: float, source_width: int):
+    """Pick which face the crop should follow.
+
+    Choosing the largest face makes two people at similar distance swap the
+    frame back and forth, because tiny changes flip which is momentarily
+    bigger. Staying with whoever is nearest the current framing keeps the
+    shot on one person; size only decides when there is nothing to stay near.
+    """
+    largest = max(faces, key=lambda face: float(face[2]) * float(face[3]))
+    if anchor is None:
+        return largest
+
+    def distance(face) -> float:
+        centre = (float(face[0]) + float(face[2]) / 2.0) * scale
+        return abs(centre - anchor)
+
+    nearest = min(faces, key=distance)
+
+    # A face far outside the current framing is a different subject, not drift.
+    if distance(nearest) > config.TRACKING_MAX_JUMP_FRACTION * source_width:
+        return largest
+    return nearest
 
 
 # ---------------------------------------------------------------------------
