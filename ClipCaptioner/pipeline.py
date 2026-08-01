@@ -17,23 +17,31 @@ import splitter
 import titler
 import tracker
 import transcriber
-from models import CaptionGroup, VideoInfo
+from models import CaptionGroup, VideoInfo, Word
 
 
 class PipelineError(Exception):
     """Raised when a clip cannot be processed."""
 
 
-def find_clips(input_dir: Path) -> list[Path]:
-    """Source clips to caption, ignoring anything we produced ourselves."""
+def find_clips(input_dir: Path, output_dir: Path | None = None) -> list[Path]:
+    """Source clips to caption, ignoring anything we produced ourselves.
+
+    Rendered clips are named after their title, so they cannot be recognised
+    by name any more. Location is the reliable test: anything sitting in the
+    output folder is our own work.
+    """
     if not input_dir.exists():
         raise PipelineError(f"Input folder does not exist: {input_dir}")
 
-    clips = [
-        path
-        for path in sorted(input_dir.glob("*.mp4"))
-        if "[vertical" not in path.stem
-    ]
+    resolved_output = output_dir.resolve() if output_dir else None
+
+    clips: list[Path] = []
+    for path in sorted(input_dir.glob("*.mp4")):
+        if resolved_output and resolved_output in path.resolve().parents:
+            continue
+        clips.append(path)
+
     return clips
 
 
@@ -77,16 +85,19 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
 
     parts = splitter.split_into_parts(groups, duration)
 
-    pending = [
-        part
-        for part in parts
-        if not renderer.build_output_path(output_dir, clip, part).exists()
-    ]
+    # The title decides the filename, so it has to be worked out before the
+    # output path exists, not written alongside it afterwards.
+    planned = []
+    for part in parts:
+        words = [word for group in part.groups for word in group.words]
+        title = titler.make_title(words, clip.stem)
+        planned.append((part, title, words, renderer.build_output_path(output_dir, clip, part, title)))
+
+    pending = [entry for entry in planned if not entry[3].exists()]
     crop_path = _crop_path(clip, info) if pending else None
 
     rendered: list[Path] = []
-    for part in parts:
-        output_path = renderer.build_output_path(output_dir, clip, part)
+    for part, title, words, output_path in planned:
         if output_path.exists() and output_path.stat().st_size > 0:
             print(f"    part {part.index}/{part.total}: already rendered, skipping")
             rendered.append(output_path)
@@ -96,30 +107,35 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
             f"    part {part.index}/{part.total}: "
             f"{part.duration_s:.0f}s, {len(part.groups)} caption group(s) - rendering"
         )
+        print(f"    title: {title}")
         rendered.append(
-            renderer.render_part(clip, part, info, output_path, crop_path=crop_path)
+            renderer.render_part(
+                clip, part, info, output_path, crop_path=crop_path, title=title
+            )
         )
-        _write_title(part, output_path, clip.stem)
+        _write_description(title, words, clip.name, output_path)
 
     return rendered
 
 
-def _write_title(part, output_path: Path, fallback: str) -> None:
-    """Save a suggested title next to the rendered clip."""
+def _write_description(
+    title: str,
+    words: list[Word],
+    source_name: str,
+    output_path: Path,
+) -> None:
+    """Save the description and hashtags to paste when uploading."""
     if not config.WRITE_TITLES:
         return
 
-    words = [word for group in part.groups for word in group.words]
-    title = titler.make_title(words, fallback)
-
     try:
-        output_path.with_suffix(".txt").write_text(title + "\n", encoding="utf-8")
+        output_path.with_suffix(".txt").write_text(
+            titler.build_description(title, words, source_name) + "\n",
+            encoding="utf-8",
+        )
     except OSError as exc:
-        # A title is a convenience; never lose a rendered clip over one.
-        print(f"    could not write title: {exc}")
-        return
-
-    print(f"    title: {title}")
+        # Upload text is a convenience; never lose a rendered clip over one.
+        print(f"    could not write description: {exc}")
 
 
 def _transcribe_ahead(clips: list[Path]) -> Iterator[tuple[Path, list[CaptionGroup] | Exception]]:
@@ -157,7 +173,7 @@ def run(input_dir: Path | None = None, output_dir: Path | None = None) -> list[P
     output_dir = output_dir or config.OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    clips = find_clips(input_dir)
+    clips = find_clips(input_dir, output_dir)
     if not clips:
         print(f"No clips found in {input_dir}")
         return []

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -129,6 +131,7 @@ def render_part(
     info: VideoInfo,
     output_path: Path,
     crop_path: list[tracker.CropKeyframe] | None = None,
+    title: str | None = None,
 ) -> Path:
     """Render one part of a clip as a captioned vertical video."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,8 +178,14 @@ def render_part(
             config.AUDIO_BITRATE,
             "-movflags",
             "+faststart",
-            str(output_path),
         ]
+
+        # Stored in the container itself, so the title survives even if the
+        # file is renamed on the way to an upload.
+        if title:
+            args += ["-metadata", f"title={title}"]
+
+        args.append(str(output_path))
         ffmpeg_tools.run(args, cwd=work_dir)
 
     if not output_path.exists() or output_path.stat().st_size == 0:
@@ -185,9 +194,55 @@ def render_part(
     return output_path
 
 
-def build_output_path(output_dir: Path, source: Path, part: ClipPart) -> Path:
-    """Name the rendered file, numbering parts only when there are several."""
-    stem = source.stem
-    if part.total <= 1:
-        return output_dir / f"{stem} [vertical].mp4"
-    return output_dir / f"{stem} [vertical part {part.index} of {part.total}].mp4"
+# Characters Windows will not accept in a filename.
+_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+# Source clips carry their position in the video, like "[20m40s-22m10s]".
+_SOURCE_RANGE = re.compile(r"\[(\d+h)?\d+m\d+s-(\d+h)?\d+m\d+s\]")
+
+
+def sanitize_filename(text: str, max_length: int = 120) -> str:
+    """Make a title safe to use as a filename."""
+    cleaned = _ILLEGAL.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rsplit(" ", 1)[0].rstrip(" .")
+    return cleaned or "clip"
+
+
+def build_output_path(
+    output_dir: Path,
+    source: Path,
+    part: ClipPart,
+    title: str | None = None,
+) -> Path:
+    """Name the rendered file after its title.
+
+    YouTube pre-fills the title field from the filename on upload, so naming
+    the file properly saves retyping it for every clip.
+
+    The source clip's timestamp range is kept on the end. Two different
+    moments can score the same title, and without something unique the second
+    would look already-rendered and be silently skipped.
+    """
+    suffix = ""
+
+    if title:
+        stem = sanitize_filename(title)
+        # Two different moments can score the same title. Without something
+        # tied to the source, the second would look already-rendered and be
+        # skipped in silence. The timestamp range reads well and is already
+        # unique; a short digest covers sources that lack one.
+        match = _SOURCE_RANGE.search(source.stem)
+        if match:
+            suffix = f" {match.group(0)}"
+        else:
+            digest = hashlib.sha1(source.stem.encode("utf-8")).hexdigest()[:6]
+            suffix = f" [{digest}]"
+    else:
+        stem = source.stem
+
+    if part.total > 1:
+        suffix += f" (part {part.index} of {part.total})"
+
+    return output_dir / f"{stem}{suffix}.mp4"

@@ -184,6 +184,79 @@ def _tidy(text: str) -> str:
     return text[0].upper() + text[1:]
 
 
+# Words carrying no topical meaning. Removing them is what turns raw word
+# counts into something resembling keywords.
+_STOPWORDS = frozenset(
+    """
+    a about after all also am an and any are as at be because been before
+    being but by can cant come could did didnt do does doing dont down each
+    even for from get gets getting go going got had has have having he her
+    here hers him his how i if im in into is isnt it its just know let like
+    ll me more most much my no not now of off on once one only or other our
+    out over own re said same say says see she should so some such take than
+    that thats the their them then there these they thing things think this
+    those through to too up us very want was wasnt we well went were what
+    when where which while who why will with would yeah yes you your youre
+    """.split()
+)
+
+
+def keywords(words: list[Word], limit: int = 6) -> list[str]:
+    """Most-repeated meaningful words, as topic hints.
+
+    Frequency with stopwords removed. Crude, but repetition genuinely tracks
+    what a clip is about, and it cannot hallucinate a topic the clip lacks.
+    """
+    counts: dict[str, int] = {}
+
+    for word in words:
+        for token in _normalise(word.text):
+            # Contractions are grammar, never a topic - "we're" is not a tag.
+            if "'" in token:
+                continue
+            if len(token) < 4 or token in _STOPWORDS:
+                continue
+            counts[token] = counts.get(token, 0) + 1
+
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [token for token, count in ranked[:limit] if count > 1]
+
+
+def build_hashtags(words: list[Word]) -> list[str]:
+    """Hashtags for the description.
+
+    Three is the practical ceiling - YouTube ignores them all past about
+    fifteen, and a short, relevant set reads better than a wall of them.
+    #Shorts is always first because it is what routes a vertical video into
+    the Shorts feed.
+    """
+    tags = ["#Shorts"]
+    for keyword in keywords(words, limit=4):
+        if len(tags) >= 3:
+            break
+        tags.append("#" + keyword.capitalize())
+    return tags
+
+
+def build_description(title: str, words: list[Word], source_name: str) -> str:
+    """Assemble the text to paste into YouTube's description box.
+
+    The first line repeats the title because that is the part search actually
+    weighs; the rest is context and tags.
+    """
+    lines = [title, ""]
+
+    topics = keywords(words, limit=6)
+    if topics:
+        lines.append("Topics: " + ", ".join(topics))
+        lines.append("")
+
+    lines.append(f"Clipped from: {source_name}")
+    lines.append("")
+    lines.append(" ".join(build_hashtags(words)))
+    return "\n".join(lines)
+
+
 def make_title(words: list[Word], fallback: str) -> str:
     """Choose the most title-worthy line the clip actually contains."""
     if not words:

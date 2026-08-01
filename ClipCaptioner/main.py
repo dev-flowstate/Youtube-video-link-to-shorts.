@@ -45,7 +45,11 @@ def main() -> int:
 
     try:
         if args.only:
-            clips = [c for c in pipeline.find_clips(args.input) if args.only.lower() in c.name.lower()]
+            clips = [
+                c
+                for c in pipeline.find_clips(args.input, args.output)
+                if args.only.lower() in c.name.lower()
+            ]
             if not clips:
                 print(f"No clips matched --only {args.only!r}")
                 return 1

@@ -182,9 +182,13 @@ Edges are aligned to pauses in speech, so clips start and end on a sentence
 instead of mid-word, and candidates that are mostly silence are skipped before
 the hottest are picked.
 
-Every finished clip also gets a `.txt` beside it with a suggested title,
-picked by scoring the clip's own transcript. No model is involved, so the
-title is always a line the clip actually contains.
+**Clips are named after their title**, picked by scoring the clip's own
+transcript — YouTube pre-fills the title field from the filename on upload, so
+there is nothing to retype. A `.txt` beside each clip holds the description and
+hashtags to paste.
+
+No model is involved, so the title is always a line the clip actually
+contains.
 
 Both are near the top of `YouTubeReplayDownloader/main.py`:
 

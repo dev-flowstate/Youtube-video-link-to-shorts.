@@ -74,8 +74,39 @@ Everything tunable lives in `config.py`.
 
 ## Titles
 
-Each rendered clip gets a `.txt` beside it holding a suggested title, taken
-from the clip's own strongest line.
+**Rendered clips are named after their title**, because YouTube pre-fills the
+title field from the filename on upload. The title is also written into the
+MP4's metadata, so it survives a rename.
+
+```
+Why did nobody tell me about this [20m40s-22m10s].mp4
+Why did nobody tell me about this [20m40s-22m10s].txt
+```
+
+The trailing range comes from the source clip and is what keeps names unique.
+Two different moments can score the same title, and without it the second
+would look already-rendered and be skipped in silence. Sources with no range
+in their name get a short digest instead.
+
+The `.txt` holds the description and hashtags to paste when uploading:
+
+```
+Why did nobody tell me about this
+
+Topics: island, helicopter
+
+Clipped from: My Video [20m40s-22m10s].mp4
+
+#Shorts #Island #Helicopter
+```
+
+Hashtags are capped at three — YouTube ignores them all past roughly fifteen,
+and `#Shorts` comes first because that is what routes a vertical video into
+the Shorts feed. Topics are the most-repeated meaningful words in the clip;
+repetition tracks subject matter, and unlike a model it cannot invent a topic
+the clip does not contain.
+
+The title itself is the clip's own strongest line.
 
 No model is involved. Sentences are rebuilt from the word timings, then scored
 on properties that separate a hook from filler:

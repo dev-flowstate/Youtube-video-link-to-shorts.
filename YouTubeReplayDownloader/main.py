@@ -24,7 +24,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://www.youtube.com/live/S2zQ2pdp3bs?si=amEn29rsUWwuaEDa"
+YOUTUBE_URL = "https://youtu.be/KPh0LOCWT5A?si=6a1CneNjlpkQMfWH"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -34,7 +34,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 # How many clips to keep from a single video. Only the strongest peaks
 # survive, so this is "the N hottest moments". Set to None for no limit.
-MAX_CLIPS: int | None = 5
+MAX_CLIPS: int | None = 6
 
 # Longest a clip may run, in seconds. Clips are trimmed around their peak, so
 # the best moment stays in frame. Short clips hold attention; 90s is about the
