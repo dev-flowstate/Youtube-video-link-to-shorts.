@@ -14,6 +14,7 @@ import config
 import ffmpeg_tools
 import renderer
 import splitter
+import titler
 import tracker
 import transcriber
 from models import CaptionGroup, VideoInfo
@@ -98,8 +99,27 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
         rendered.append(
             renderer.render_part(clip, part, info, output_path, crop_path=crop_path)
         )
+        _write_title(part, output_path, clip.stem)
 
     return rendered
+
+
+def _write_title(part, output_path: Path, fallback: str) -> None:
+    """Save a suggested title next to the rendered clip."""
+    if not config.WRITE_TITLES:
+        return
+
+    words = [word for group in part.groups for word in group.words]
+    title = titler.make_title(words, fallback)
+
+    try:
+        output_path.with_suffix(".txt").write_text(title + "\n", encoding="utf-8")
+    except OSError as exc:
+        # A title is a convenience; never lose a rendered clip over one.
+        print(f"    could not write title: {exc}")
+        return
+
+    print(f"    title: {title}")
 
 
 def _transcribe_ahead(clips: list[Path]) -> Iterator[tuple[Path, list[CaptionGroup] | Exception]]:

@@ -163,6 +163,19 @@ TRACKING_DEADZONE_PX = 12.0
 
 
 # ---------------------------------------------------------------------------
+# Titles
+# ---------------------------------------------------------------------------
+
+# Write a suggested title beside each rendered clip, as a .txt file. The title
+# is the clip's own strongest line, chosen by scoring the transcript - no model
+# is involved, so it can never invent something that was not said.
+WRITE_TITLES = True
+
+# Titles longer than this get cut off on mobile. YouTube shows roughly this
+# much before truncating.
+TITLE_MAX_CHARS = 70
+
+# ---------------------------------------------------------------------------
 # Splitting
 # ---------------------------------------------------------------------------
 

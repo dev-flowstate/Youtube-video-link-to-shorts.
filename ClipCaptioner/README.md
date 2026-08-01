@@ -49,6 +49,8 @@ Everything tunable lives in `config.py`.
 | `COLOR_ACTIVE` | Highlight colour, in ASS `BBGGRR` order — **not** web hex. |
 | `CAPTION_MARGIN_V` | Pixels from the bottom of the 1920-tall frame. |
 | `SPLIT_LONG_CLIPS` | Split clips over `MAX_PART_DURATION_S` into numbered parts. |
+| `WRITE_TITLES` | Save a suggested title beside each clip as a `.txt` file. |
+| `TITLE_MAX_CHARS` | Titles longer than this get truncated on a word boundary. |
 | `VIDEO_CRF`, `VIDEO_PRESET` | Quality vs encode time. |
 
 ## Layout
@@ -64,10 +66,38 @@ Everything tunable lives in `config.py`.
 | `caption_builder.py` | Groups words into short on-screen bursts |
 | `ass_writer.py` | Emits the ASS subtitle file |
 | `splitter.py` | Splits long clips on speech gaps |
+| `titler.py` | Scores the transcript to pick a title |
 | `tracker.py` | Face detection, subject choice, and the smoothed crop path |
 | `renderer.py` | Crop, burn-in, encode |
 | `ffmpeg_tools.py` | FFmpeg discovery, execution, probing |
 | `models/` | YuNet face detection model (227 KB, ships with the repo) |
+
+## Titles
+
+Each rendered clip gets a `.txt` beside it holding a suggested title, taken
+from the clip's own strongest line.
+
+No model is involved. Sentences are rebuilt from the word timings, then scored
+on properties that separate a hook from filler:
+
+| Property | Effect |
+|---|---|
+| Ends with a question mark | Strongest single signal |
+| Superlatives — *never, biggest, insane, only* | Raises the score, up to a cap |
+| Numbers or money | Specific claims read as credible |
+| Emotional words — *scared, shocked, brutal* | Moderate lift |
+| 4–12 words long | Title-shaped; longer and shorter are penalised |
+| Filler — *um, like, yeah* | Penalised in proportion to how much there is |
+| Near the middle of the clip | The clip is cut around its peak, so the middle is the moment |
+
+The winner is tidied up: leading filler is dropped, a trailing full stop
+removed, a question mark kept, and anything over `TITLE_MAX_CHARS` truncated
+on a word boundary. If nothing scores well enough the clip's filename is used
+instead.
+
+Because the title is always a line the clip actually contains, it can never
+describe something that was not said — which also means it is only as good as
+the transcription. If names come out wrong, fill in `WHISPER_VOCABULARY`.
 
 ## Notes
 
