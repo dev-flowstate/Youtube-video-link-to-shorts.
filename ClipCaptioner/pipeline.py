@@ -139,7 +139,7 @@ def _write_description(
     output_path: Path,
 ) -> None:
     """Save the description and hashtags to paste when uploading."""
-    if not config.WRITE_TITLES:
+    if not config.WRITE_UPLOAD_NOTES:
         return
 
     try:

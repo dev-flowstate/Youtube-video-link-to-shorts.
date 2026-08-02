@@ -174,10 +174,12 @@ TRACKING_DEADZONE_PX = 12.0
 # Titles
 # ---------------------------------------------------------------------------
 
-# Write a suggested title beside each rendered clip, as a .txt file. The title
-# is the clip's own strongest line, chosen by scoring the transcript - no model
-# is involved, so it can never invent something that was not said.
-WRITE_TITLES = True
+# Write a .txt beside each clip holding the description and hashtags to paste
+# when uploading. Off by default so the output folder holds videos only.
+#
+# This does not affect the title itself: clips are still named after their
+# strongest line and still carry it in their MP4 metadata.
+WRITE_UPLOAD_NOTES = False
 
 # Titles longer than this get cut off on mobile. YouTube shows roughly this
 # much before truncating.

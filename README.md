@@ -188,11 +188,13 @@ halfway through an idea.
 
 **Clips are named after their title**, picked by scoring the clip's own
 transcript — YouTube pre-fills the title field from the filename on upload, so
-there is nothing to retype. A `.txt` beside each clip holds the description and
-hashtags to paste.
+there is nothing to retype. The title is stored in the MP4's metadata too.
 
 No model is involved, so the title is always a line the clip actually
 contains.
+
+Set `WRITE_UPLOAD_NOTES = True` in `ClipCaptioner/config.py` if you also want a
+`.txt` beside each clip with a description and hashtags.
 
 Both are near the top of `YouTubeReplayDownloader/main.py`:
 

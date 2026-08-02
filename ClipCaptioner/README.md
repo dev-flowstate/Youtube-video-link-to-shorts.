@@ -51,7 +51,7 @@ Everything tunable lives in `config.py`.
 | `END_ON_COMPLETE_THOUGHT` | Stop where a sentence finishes, not merely where speech pauses. |
 | `THOUGHT_MIN_SECONDS` / `THOUGHT_MAX_SECONDS` | How far the ending may move to reach that sentence. |
 | `SPLIT_LONG_CLIPS` | Split clips over `MAX_PART_DURATION_S` into numbered parts. |
-| `WRITE_TITLES` | Save a suggested title beside each clip as a `.txt` file. |
+| `WRITE_UPLOAD_NOTES` | Save a `.txt` beside each clip with the description and hashtags. Off by default. |
 | `TITLE_MAX_CHARS` | Titles longer than this get truncated on a word boundary. |
 | `VIDEO_CRF`, `VIDEO_PRESET` | Quality vs encode time. |
 
@@ -107,7 +107,6 @@ MP4's metadata, so it survives a rename.
 
 ```
 Why did nobody tell me about this [20m40s-22m10s].mp4
-Why did nobody tell me about this [20m40s-22m10s].txt
 ```
 
 The trailing range comes from the source clip and is what keeps names unique.
@@ -115,7 +114,8 @@ Two different moments can score the same title, and without it the second
 would look already-rendered and be skipped in silence. Sources with no range
 in their name get a short digest instead.
 
-The `.txt` holds the description and hashtags to paste when uploading:
+Set `WRITE_UPLOAD_NOTES = True` to also get a `.txt` beside each clip with the
+description and hashtags to paste when uploading:
 
 ```
 Why did nobody tell me about this
