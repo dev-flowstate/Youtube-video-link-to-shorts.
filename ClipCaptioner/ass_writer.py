@@ -16,13 +16,13 @@ _HEADER_TEMPLATE = """[Script Info]
 ScriptType: v4.00+
 PlayResX: {play_x}
 PlayResY: {play_y}
-WrapStyle: 2
+WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Clip,{font},{size},&H00{base},&H00{active},&H00{outline},&H80000000,-1,0,0,0,100,100,0,0,1,{outline_w},{shadow},2,80,80,{margin_v},1
+Style: Clip,{font},{size},&H00{base},&H00{active},&H00{outline},&H80000000,-1,0,0,0,100,100,0,0,1,{outline_w},{shadow},2,{margin_h},{margin_h},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -117,6 +117,7 @@ def write_ass(groups: list[CaptionGroup], destination: Path) -> Path:
         outline=config.COLOR_OUTLINE,
         outline_w=config.OUTLINE_WIDTH,
         shadow=config.SHADOW_DEPTH,
+        margin_h=config.CAPTION_MARGIN_H,
         margin_v=config.CAPTION_MARGIN_V,
     )
 

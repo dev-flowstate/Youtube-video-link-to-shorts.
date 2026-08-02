@@ -52,8 +52,11 @@ WHISPER_VOCABULARY: list[str] = [
 # Words visible on screen at once. Clipper captions stay tiny and fast.
 MAX_WORDS_PER_GROUP = 3
 
-# Characters on screen at once, so long words do not overflow the frame.
-MAX_CHARS_PER_GROUP = 20
+# Characters on screen at once. Arial Black runs about 0.62 x the font size
+# per character, so at FONT_SIZE 96 in a 1080-wide frame with CAPTION_MARGIN_H
+# either side, 15 characters is roughly the widest line that still fits.
+# Raising this without lowering FONT_SIZE pushes text off the frame.
+MAX_CHARS_PER_GROUP = 15
 
 # A silence longer than this starts a new caption group.
 GROUP_SPLIT_SILENCE_S = 0.45
@@ -67,7 +70,12 @@ MIN_GROUP_DURATION_S = 0.30
 
 # Both are installed on Windows by default. "Impact" is narrower and taller.
 FONT_NAME = "Arial Black"
-FONT_SIZE = 110
+FONT_SIZE = 88
+
+# Clear space either side of the caption, in pixels. Text wider than
+# TARGET_WIDTH minus twice this wraps to a second line rather than running off
+# the frame.
+CAPTION_MARGIN_H = 60
 
 # ASS colours are &HBBGGRR - blue and red are swapped relative to hex web
 # colours. These constants are the raw BGR values.
