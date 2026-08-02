@@ -178,9 +178,13 @@ overlapping candidates are dropped — five distinct moments rather than five
 that partly repeat each other. Short clips hold attention, which is the whole
 point of the format.
 
-Edges are aligned to pauses in speech, so clips start and end on a sentence
-instead of mid-word, and candidates that are mostly silence are skipped before
-the hottest are picked.
+Edges are aligned to pauses in speech, so clips never start mid-word, and
+candidates that are mostly silence are skipped before the hottest are picked.
+
+Clips then **end where a sentence finishes**, not merely where speech pauses —
+a pause happens inside sentences too. The ending shifts either way to reach
+one, so a clip may run slightly over or under 90 seconds rather than stop
+halfway through an idea.
 
 **Clips are named after their title**, picked by scoring the clip's own
 transcript — YouTube pre-fills the title field from the filename on upload, so

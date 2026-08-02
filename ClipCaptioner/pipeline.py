@@ -14,6 +14,7 @@ import config
 import ffmpeg_tools
 import renderer
 import splitter
+import thought
 import titler
 import tracker
 import transcriber
@@ -83,7 +84,20 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
     info = ffmpeg_tools.probe_video(clip)
     duration = info.duration_s
 
-    parts = splitter.split_into_parts(groups, duration)
+    # Stop where the sentence does. Applied before splitting so the chosen end
+    # is the clip's real end, and any trailing part-boundary follows from it.
+    # Capped at the footage available: the downloader leaves a tail to reach
+    # into, but there is nothing beyond the file itself.
+    usable_end = min(thought.choose_end(groups, duration), duration)
+
+    if duration - usable_end > 0.5:
+        print(
+            f"    ended on a complete thought: "
+            f"{duration:.1f}s -> {usable_end:.1f}s"
+        )
+        groups = thought.trim_groups(groups, usable_end)
+
+    parts = splitter.split_into_parts(groups, usable_end)
 
     # The title decides the filename, so it has to be worked out before the
     # output path exists, not written alongside it afterwards.

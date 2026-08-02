@@ -46,6 +46,12 @@ MAX_CLIP_SECONDS = 90.0
 # audio-only download before the video is fetched.
 SNAP_TO_SPEECH = True
 
+# Extra seconds kept on the end of every clip. ClipCaptioner reads the
+# transcript and stops the finished video where a sentence actually ends,
+# which it can only do if there is footage past the cut to reach into.
+# Unused padding is dropped there, so it costs a little download, not runtime.
+TAIL_PADDING_SECONDS = 20.0
+
 
 def _pick_hottest(segments: list[ReplaySegment], limit: int) -> list[ReplaySegment]:
     """Take the strongest peaks, skipping any that repeat an earlier pick.
@@ -101,6 +107,38 @@ def _refine_with_speech(
     return refined
 
 
+def _add_tail_padding(
+    segments: list[ReplaySegment],
+    video_duration_s: float,
+) -> list[ReplaySegment]:
+    """Keep extra footage past each cut for the captioner to reach into.
+
+    ClipCaptioner ends the finished video where a sentence actually finishes,
+    which it can only do if the clip contains footage past the activity-based
+    cut. Whatever it does not use is dropped there.
+    """
+    if TAIL_PADDING_SECONDS <= 0:
+        return segments
+
+    padded: list[ReplaySegment] = []
+    for segment in segments:
+        end_s = segment.end_s + TAIL_PADDING_SECONDS
+        if video_duration_s > 0:
+            end_s = min(end_s, video_duration_s)
+
+        padded.append(
+            ReplaySegment(
+                start_s=segment.start_s,
+                end_s=end_s,
+                peak_s=segment.peak_s,
+                peak_score=segment.peak_score,
+                prominence=segment.prominence,
+            )
+        )
+
+    return padded
+
+
 def _print_segments(segments: list[ReplaySegment]) -> None:
     print(f"\nFound {len(segments)} replay segment(s):\n")
     for index, segment in enumerate(segments, start=1):
@@ -152,6 +190,10 @@ def main() -> int:
         if MAX_CLIPS is not None and len(segments) > MAX_CLIPS:
             print(f"Keeping the {MAX_CLIPS} hottest of {len(segments)} peaks.")
             segments = _pick_hottest(segments, MAX_CLIPS)
+
+        # Padding is added last so it cannot push two candidates into overlap
+        # during selection, which would cost one of the slots.
+        segments = _add_tail_padding(segments, moments.duration_s)
 
         _print_segments(segments)
 

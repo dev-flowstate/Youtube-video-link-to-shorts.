@@ -66,6 +66,7 @@ Both near the top of `main.py`:
 | `MAX_CLIPS` | How many clips to keep. Only the strongest peaks survive, so this is "the N hottest moments". `None` keeps every peak. |
 | `MAX_CLIP_SECONDS` | Per-clip ceiling. Clips are trimmed around their peak so the best bit stays in frame. |
 | `SNAP_TO_SPEECH` | Align clip edges with pauses so they start and end on a sentence, and skip candidates that are mostly silence. |
+| `TAIL_PADDING_SECONDS` | Extra footage kept past each cut. ClipCaptioner reads the transcript and stops the finished video where a sentence actually ends, which it can only do if there is material to reach into. Unused padding is dropped there. |
 
 Overlapping candidates are dropped during selection, so you get distinct
 moments rather than several that partly repeat each other.

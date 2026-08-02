@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 
 import config
-from models import Word
+from models import Word, join_word_texts
 
 # Words that mark a claim worth clicking on. Curated rather than learned:
 # these are the terms that carry stakes, extremity or novelty.
@@ -69,7 +69,7 @@ class Sentence:
 
     @property
     def text(self) -> str:
-        return " ".join(word.text for word in self.words).strip()
+        return join_word_texts([word.text for word in self.words]).strip()
 
     @property
     def start_s(self) -> float:

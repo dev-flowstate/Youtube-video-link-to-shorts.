@@ -5,6 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+# Whisper emits punctuation as its own token, so "4,000" arrives as "4" then
+# ",000". Joining everything with spaces produces "4 ,000", which looks broken
+# in both captions and titles.
+NO_SPACE_BEFORE = (",", ".", "!", "?", ";", ":", "'", "%", ")", "]", "}", "n't")
+
+
+def join_word_texts(texts: list[str]) -> str:
+    """Join word tokens, closing up before trailing punctuation."""
+    out = ""
+    for text in texts:
+        if out and not text.startswith(NO_SPACE_BEFORE):
+            out += " "
+        out += text
+    return out
+
+
 @dataclass(frozen=True)
 class Word:
     """A single transcribed word with its spoken time range."""
@@ -42,7 +58,7 @@ class CaptionGroup:
 
     @property
     def text(self) -> str:
-        return " ".join(word.text for word in self.words)
+        return join_word_texts([word.text for word in self.words])
 
     def shifted(self, offset_s: float) -> CaptionGroup:
         return CaptionGroup(words=[word.shifted(offset_s) for word in self.words])

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import config
-from models import CaptionGroup
+from models import NO_SPACE_BEFORE, CaptionGroup
 
 _HEADER_TEMPLATE = """[Script Info]
 ScriptType: v4.00+
@@ -63,20 +63,26 @@ def _word_text(raw: str) -> str:
 def _render_group_line(group: CaptionGroup, active_index: int) -> str:
     """Build the on-screen text with one word highlighted."""
     scale = config.ACTIVE_SCALE_PERCENT
-    parts: list[str] = []
+    line = ""
 
     for index, word in enumerate(group.words):
         text = _word_text(word.text)
+
+        # Whisper splits punctuation into its own token, so a space here would
+        # render "4 ,000" on screen.
+        if line and not text.startswith(NO_SPACE_BEFORE):
+            line += " "
+
         if index == active_index:
-            parts.append(
+            line += (
                 f"{{\\1c&H{config.COLOR_ACTIVE}&\\fscx{scale}\\fscy{scale}}}"
                 f"{text}"
                 f"{{\\1c&H{config.COLOR_BASE}&\\fscx100\\fscy100}}"
             )
         else:
-            parts.append(text)
+            line += text
 
-    return " ".join(parts)
+    return line
 
 
 def _group_events(group: CaptionGroup) -> list[tuple[float, float, str]]:

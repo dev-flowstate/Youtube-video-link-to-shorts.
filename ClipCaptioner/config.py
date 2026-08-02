@@ -176,6 +176,21 @@ WRITE_TITLES = True
 TITLE_MAX_CHARS = 70
 
 # ---------------------------------------------------------------------------
+# Ending on a complete thought
+# ---------------------------------------------------------------------------
+
+# End clips where a sentence finishes rather than merely where speech pauses.
+# A pause happens inside sentences too, so without this a clip can stop
+# halfway through an idea, which reads worse than an extra few seconds.
+END_ON_COMPLETE_THOUGHT = True
+
+# Bounds on where that sentence ending may be, in seconds from the clip's
+# start. Finishing the thought is worth going over the nominal 90s for, but
+# not by much - a clip that runs on defeats the format.
+THOUGHT_MIN_SECONDS = 35.0
+THOUGHT_MAX_SECONDS = 110.0
+
+# ---------------------------------------------------------------------------
 # Splitting
 # ---------------------------------------------------------------------------
 

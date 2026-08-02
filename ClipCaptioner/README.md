@@ -48,6 +48,8 @@ Everything tunable lives in `config.py`.
 | `FONT_NAME`, `FONT_SIZE` | `Arial Black` and `Impact` ship with Windows. |
 | `COLOR_ACTIVE` | Highlight colour, in ASS `BBGGRR` order — **not** web hex. |
 | `CAPTION_MARGIN_V` | Pixels from the bottom of the 1920-tall frame. |
+| `END_ON_COMPLETE_THOUGHT` | Stop where a sentence finishes, not merely where speech pauses. |
+| `THOUGHT_MIN_SECONDS` / `THOUGHT_MAX_SECONDS` | How far the ending may move to reach that sentence. |
 | `SPLIT_LONG_CLIPS` | Split clips over `MAX_PART_DURATION_S` into numbered parts. |
 | `WRITE_TITLES` | Save a suggested title beside each clip as a `.txt` file. |
 | `TITLE_MAX_CHARS` | Titles longer than this get truncated on a word boundary. |
@@ -71,6 +73,31 @@ Everything tunable lives in `config.py`.
 | `renderer.py` | Crop, burn-in, encode |
 | `ffmpeg_tools.py` | FFmpeg discovery, execution, probing |
 | `models/` | YuNet face detection model (227 KB, ships with the repo) |
+
+## Ending on a complete thought
+
+The downloader aligns clip edges to pauses in speech, which stops clips cutting
+mid-word. But a pause happens *inside* sentences as well as between them, so a
+clip could still stop halfway through an idea.
+
+Punctuation is what marks the difference, and the transcript has it. Each clip
+ends at the sentence ending nearest its natural cut — nearest rather than
+latest, because the natural cut is where audience activity died down and so
+marks the moment the clip is about. Always reaching for the furthest sentence
+would pad every clip out to the ceiling and bury the point.
+
+The ending moves in either direction, bounded by `THOUGHT_MIN_SECONDS` and
+`THOUGHT_MAX_SECONDS`. Finishing the sentence is worth going a little past 90s
+for; running on and on is not. Measured on a real clip:
+
+```
+raw cut 70.0s -> 69.6s   back to where the sentence ended
+raw cut 82.0s -> 83.8s   forward to finish the thought
+```
+
+To reach forward at all, the finished clip needs footage past the cut, which is
+why the downloader keeps `TAIL_PADDING_SECONDS` on the end of every clip.
+Whatever is not used is dropped here.
 
 ## Titles
 
