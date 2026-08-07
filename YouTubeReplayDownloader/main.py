@@ -32,9 +32,23 @@ YOUTUBE_URL = "https://www.youtube.com/live/eyhpuALAiog?si=Qq8YtIm8lQ-qLs93"
 #     OUTPUT_DIR = Path(r"E:\Youtube Videos\Videos")
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
-# How many clips to keep from a single video. Only the strongest peaks
-# survive, so this is "the N hottest moments". Set to None for no limit.
-MAX_CLIPS: int | None = 6
+# How many clips to keep, scaled to how long the source runs. A three hour
+# stream holds far more worth clipping than a ten minute video, and a fixed
+# count threw most of a stream away. Only the strongest peaks survive, so
+# these are always "the N hottest moments".
+#
+# Supply runs out on its own: clips may not overlap, so a 55 minute stream
+# yields about 27 distinct ones however many are asked for.
+CLIPS_PER_HOUR = 15
+
+# Floor for short videos and ceiling for very long ones. Every clip costs a
+# download and a captioning pass, so the ceiling keeps an all-day stream from
+# turning into a week of rendering.
+MIN_CLIPS = 5
+MAX_CLIPS = 40
+
+# Set a number here to ignore the scaling and always take exactly that many.
+FIXED_CLIP_COUNT: int | None = None
 
 # Longest a clip may run, in seconds. Clips are trimmed around their peak, so
 # the best moment stays in frame. Short clips hold attention; 90s is about the
@@ -51,6 +65,18 @@ SNAP_TO_SPEECH = True
 # which it can only do if there is footage past the cut to reach into.
 # Unused padding is dropped there, so it costs a little download, not runtime.
 TAIL_PADDING_SECONDS = 20.0
+
+
+def _clip_budget(duration_s: float) -> int:
+    """How many clips to take from a source of this length."""
+    if FIXED_CLIP_COUNT is not None:
+        return max(1, FIXED_CLIP_COUNT)
+
+    if duration_s <= 0:
+        return MIN_CLIPS
+
+    wanted = round((duration_s / 3600.0) * CLIPS_PER_HOUR)
+    return int(max(MIN_CLIPS, min(MAX_CLIPS, wanted)))
 
 
 def _pick_hottest(segments: list[ReplaySegment], limit: int) -> list[ReplaySegment]:
@@ -187,9 +213,13 @@ def main() -> int:
             print("Every candidate was mostly silence. Nothing to download.")
             return 0
 
-        if MAX_CLIPS is not None and len(segments) > MAX_CLIPS:
-            print(f"Keeping the {MAX_CLIPS} hottest of {len(segments)} peaks.")
-            segments = _pick_hottest(segments, MAX_CLIPS)
+        budget = _clip_budget(moments.duration_s)
+        if len(segments) > budget:
+            print(
+                f"Source runs {moments.duration_s / 60:.0f} min - "
+                f"keeping the {budget} hottest of {len(segments)} peaks."
+            )
+            segments = _pick_hottest(segments, budget)
 
         # Padding is added last so it cannot push two candidates into overlap
         # during selection, which would cost one of the slots.

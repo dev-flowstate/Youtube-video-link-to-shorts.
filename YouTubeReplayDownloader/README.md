@@ -85,13 +85,25 @@ Both near the top of `main.py`:
 |---|---|
 | `YOUTUBE_URL` | The video to clip |
 | `OUTPUT_DIR` | Where clips are written |
-| `MAX_CLIPS` | How many clips to keep. Only the strongest peaks survive, so this is "the N hottest moments". `None` keeps every peak. |
+| `CLIPS_PER_HOUR` | Clips scale with how long the source runs — a three hour stream holds far more worth clipping than a ten minute video. |
+| `MIN_CLIPS` / `MAX_CLIPS` | Floor for short videos, ceiling for very long ones. |
+| `FIXED_CLIP_COUNT` | Set a number to ignore the scaling and always take exactly that many. |
 | `MAX_CLIP_SECONDS` | Per-clip ceiling. Clips are trimmed around their peak so the best bit stays in frame. |
 | `SNAP_TO_SPEECH` | Align clip edges with pauses so they start and end on a sentence, and skip candidates that are mostly silence. |
 | `TAIL_PADDING_SECONDS` | Extra footage kept past each cut. ClipCaptioner reads the transcript and stops the finished video where a sentence actually ends, which it can only do if there is material to reach into. Unused padding is dropped there. |
 
 Overlapping candidates are dropped during selection, so you get distinct
 moments rather than several that partly repeat each other.
+
+That also caps supply on its own: a 55 minute stream yields about 27 distinct
+clips however many are asked for, because the rest would repeat footage.
+
+| Source length | Clips |
+|---|---|
+| 20 min | 5 |
+| 55 min | 14 |
+| 90 min | 22 |
+| 3 hours or more | 40 |
 
 ## Speech-aligned edges
 

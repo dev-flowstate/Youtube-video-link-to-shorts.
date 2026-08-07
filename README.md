@@ -178,7 +178,9 @@ That's it. For the next video, change the link and repeat.
 
 ## What you get
 
-By default, the **5 hottest moments**, each capped at **90 seconds**.
+The hottest moments, each capped at **90 seconds**. How many you get scales
+with how long the source runs — a 20 minute video gives 5, a 55 minute stream
+gives 14, anything from 3 hours up gives 40.
 
 Clips are trimmed around their peak, so the best bit stays in frame, and
 overlapping candidates are dropped — five distinct moments rather than five
@@ -203,10 +205,13 @@ contains.
 Set `WRITE_UPLOAD_NOTES = True` in `ClipCaptioner/config.py` if you also want a
 `.txt` beside each clip with a description and hashtags.
 
-Both are near the top of `YouTubeReplayDownloader/main.py`:
+All near the top of `YouTubeReplayDownloader/main.py`:
 
 ```python
-MAX_CLIPS = 5             # set to None for every peak found
+CLIPS_PER_HOUR = 15       # clips scale with source length
+MIN_CLIPS = 5             # floor for short videos
+MAX_CLIPS = 40            # ceiling for very long streams
+FIXED_CLIP_COUNT = None   # set a number to ignore the scaling
 MAX_CLIP_SECONDS = 90.0   # per-clip ceiling
 ```
 
