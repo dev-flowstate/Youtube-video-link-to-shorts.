@@ -105,12 +105,20 @@ def _group_events(group: CaptionGroup) -> list[tuple[float, float, str]]:
     return events
 
 
-def write_ass(groups: list[CaptionGroup], destination: Path) -> Path:
-    """Write an ASS file covering every caption group."""
+def write_ass(
+    groups: list[CaptionGroup],
+    destination: Path,
+    language: str | None = None,
+) -> Path:
+    """Write an ASS file covering every caption group.
+
+    The font follows the language, because the default carries Latin glyphs
+    only and anything else would render as empty boxes.
+    """
     header = _HEADER_TEMPLATE.format(
         play_x=config.TARGET_WIDTH,
         play_y=config.TARGET_HEIGHT,
-        font=config.FONT_NAME,
+        font=config.font_for_language(language),
         size=config.FONT_SIZE,
         base=config.COLOR_BASE,
         active=config.COLOR_ACTIVE,

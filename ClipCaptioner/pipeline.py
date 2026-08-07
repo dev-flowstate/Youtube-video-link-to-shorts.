@@ -46,15 +46,23 @@ def find_clips(input_dir: Path, output_dir: Path | None = None) -> list[Path]:
     return clips
 
 
-def transcribe_clip(clip: Path) -> list[CaptionGroup]:
-    """Extract audio, transcribe it, and group the words for display."""
+def transcribe_clip(clip: Path) -> tuple[list[CaptionGroup], str | None]:
+    """Extract audio, transcribe it, and group the words for display.
+
+    Returns the groups and the language they were decoded as, so the renderer
+    can pick a font whose glyphs actually cover the script.
+    """
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_audio_") as tmp:
         wav_path = Path(tmp) / "audio.wav"
         audio.extract_audio(clip, wav_path)
-        # The filename carries the video title, which primes the decoder.
-        words = transcriber.transcribe_words(wav_path, title=clip.stem)
 
-    return caption_builder.build_groups(words)
+        # Detected once here and reused for the whole clip. Letting each part
+        # detect for itself lets a part full of gunfire disagree with its
+        # neighbour, which would caption one clip in two languages.
+        language = transcriber.detect_language(wav_path)
+        words = transcriber.transcribe_words(wav_path, title=clip.stem, language=language)
+
+    return caption_builder.build_groups(words), language
 
 
 def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None:
@@ -76,10 +84,16 @@ def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None
 
 def process_clip(clip: Path, output_dir: Path) -> list[Path]:
     """Caption one clip, returning every rendered file."""
-    return render_clip(clip, transcribe_clip(clip), output_dir)
+    groups, language = transcribe_clip(clip)
+    return render_clip(clip, groups, output_dir, language)
 
 
-def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> list[Path]:
+def render_clip(
+    clip: Path,
+    groups: list[CaptionGroup],
+    output_dir: Path,
+    language: str | None = None,
+) -> list[Path]:
     """Render an already-transcribed clip."""
     info = ffmpeg_tools.probe_video(clip)
     duration = info.duration_s
@@ -104,7 +118,7 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
     planned = []
     for part in parts:
         words = [word for group in part.groups for word in group.words]
-        title = titler.make_title(words, clip.stem)
+        title = titler.make_title(words, clip.stem, language)
         planned.append((part, title, words, renderer.build_output_path(output_dir, clip, part, title)))
 
     pending = [entry for entry in planned if not entry[3].exists()]
@@ -124,7 +138,13 @@ def render_clip(clip: Path, groups: list[CaptionGroup], output_dir: Path) -> lis
         print(f"    title: {title}")
         rendered.append(
             renderer.render_part(
-                clip, part, info, output_path, crop_path=crop_path, title=title
+                clip,
+                part,
+                info,
+                output_path,
+                crop_path=crop_path,
+                title=title,
+                language=language,
             )
         )
         _write_description(title, words, clip.name, output_path)
@@ -152,7 +172,9 @@ def _write_description(
         print(f"    could not write description: {exc}")
 
 
-def _transcribe_ahead(clips: list[Path]) -> Iterator[tuple[Path, list[CaptionGroup] | Exception]]:
+def _transcribe_ahead(
+    clips: list[Path],
+) -> Iterator[tuple[Path, tuple[list[CaptionGroup], str | None] | Exception]]:
     """Transcribe the next clip while the current one is still encoding.
 
     Transcription is CPU-bound and encoding runs on the GPU, so they barely
@@ -204,8 +226,9 @@ def run(input_dir: Path | None = None, output_dir: Path | None = None) -> list[P
             print()
             continue
 
+        groups, language = outcome
         try:
-            produced.extend(render_clip(clip, outcome, output_dir))
+            produced.extend(render_clip(clip, groups, output_dir, language))
         except ffmpeg_tools.FFmpegError as exc:
             print(f"    skipped: {exc}")
         print()

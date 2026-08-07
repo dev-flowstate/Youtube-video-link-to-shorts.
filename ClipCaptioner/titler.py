@@ -109,24 +109,48 @@ def _normalise(text: str) -> list[str]:
     return re.findall(r"[a-z']+", text.lower())
 
 
-def score_sentence(sentence: Sentence, midpoint_s: float, span_s: float) -> float:
+def is_english(language: str | None) -> bool:
+    """Whether the English term lists apply to this transcript.
+
+    Every word list here is English. Scoring a Urdu or Chinese transcript
+    against them matches nothing, so those clips would all tie at zero and
+    silently fall back to the filename. Detecting that up front lets the
+    language-neutral signals decide instead.
+    """
+    return language is None or language.lower().split("-")[0] == "en"
+
+
+def score_sentence(
+    sentence: Sentence,
+    midpoint_s: float,
+    span_s: float,
+    language: str | None = None,
+) -> float:
     """Rate how well a sentence would work as a title."""
     text = sentence.text
     tokens = _normalise(text)
     if not tokens:
+        # Scripts with no Latin letters normalise to nothing, so fall back to
+        # counting whitespace-separated words.
+        tokens = text.split()
+    if not tokens:
         return 0.0
 
     score = 0.0
+    english = is_english(language)
 
-    # A question is the strongest hook there is.
-    if text.rstrip().endswith("?"):
+    # A question is the strongest hook there is, and question marks are used
+    # across scripts - Urdu's "؟" included, once normalised by Whisper.
+    if text.rstrip().endswith(("?", "؟")):
         score += 3.0
-    if tokens[0] in _QUESTION_OPENERS:
-        score += 1.5
 
-    # Stakes and extremity.
-    score += 1.8 * min(3, sum(1 for token in tokens if token in _INTENSIFIERS))
-    score += 1.4 * min(2, sum(1 for token in tokens if token in _EMOTION))
+    if english:
+        if tokens[0] in _QUESTION_OPENERS:
+            score += 1.5
+
+        # Stakes and extremity.
+        score += 1.8 * min(3, sum(1 for token in tokens if token in _INTENSIFIERS))
+        score += 1.4 * min(2, sum(1 for token in tokens if token in _EMOTION))
 
     # Concrete numbers read as specific, which is persuasive.
     if _MONEY_OR_NUMBER.search(text):
@@ -142,8 +166,9 @@ def score_sentence(sentence: Sentence, midpoint_s: float, span_s: float) -> floa
         score -= 0.35 * (count - IDEAL_MAX_WORDS)
 
     # Filler drags a line down in proportion to how much of it there is.
-    filler = sum(1 for token in tokens if token in _FILLER)
-    score -= 2.2 * (filler / count)
+    if english:
+        filler = sum(1 for token in tokens if token in _FILLER)
+        score -= 2.2 * (filler / count)
 
     # The clip is cut around its peak, so the middle is the moment itself.
     if span_s > 0:
@@ -154,12 +179,14 @@ def score_sentence(sentence: Sentence, midpoint_s: float, span_s: float) -> floa
     return score
 
 
-def _tidy(text: str) -> str:
+def _tidy(text: str, english: bool = True) -> str:
     """Clean a spoken sentence into something that reads as a title."""
     text = re.sub(r"\s+", " ", text).strip()
 
     # Drop leading filler words, which are common in speech and weak in print.
-    while True:
+    # The list is English, so this is skipped for anything else rather than
+    # stripping a word that only looks like filler.
+    while english:
         match = re.match(r"^([A-Za-z']+)[,\s]+(.*)$", text)
         if not match or match.group(1).lower() not in _LEADING_FILLER:
             break
@@ -257,7 +284,7 @@ def build_description(title: str, words: list[Word], source_name: str) -> str:
     return "\n".join(lines)
 
 
-def make_title(words: list[Word], fallback: str) -> str:
+def make_title(words: list[Word], fallback: str, language: str | None = None) -> str:
     """Choose the most title-worthy line the clip actually contains."""
     if not words:
         return fallback
@@ -271,12 +298,16 @@ def make_title(words: list[Word], fallback: str) -> str:
 
     ranked = sorted(
         sentences,
-        key=lambda s: -score_sentence(s, midpoint_s, span_s),
+        key=lambda s: -score_sentence(s, midpoint_s, span_s, language),
     )
 
+    english = is_english(language)
     for sentence in ranked:
-        title = _tidy(sentence.text)
-        if len(_normalise(title)) >= IDEAL_MIN_WORDS:
+        title = _tidy(sentence.text, english)
+        # Non-Latin scripts have no letters for _normalise to find, so length
+        # is counted in whitespace-separated words instead.
+        length = len(_normalise(title)) if english else len(title.split())
+        if length >= IDEAL_MIN_WORDS:
             return title
 
     return fallback

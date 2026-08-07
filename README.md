@@ -10,11 +10,21 @@ captions.
 YouTube link
      ↓
 [1] YouTubeReplayDownloader   →  landscape clips, no subtitles
+    or EsportsClipper         →  fight clips + a compilation
      ↓
 [2] ClipCaptioner             →  vertical 1080×1920, burned-in subtitles
 ```
 
-Two separate programs, run one after the other.
+Two steps. Step 1 has two front ends — pick the one that matches the content.
+
+| Step 1 | For | Finds moments by |
+|---|---|---|
+| **YouTubeReplayDownloader** | Podcasts, vlogs, talk content | Most-replayed graph, chat spikes, speech energy |
+| **EsportsClipper** | Tournament broadcasts | Gunfire bursts gated against caster reaction |
+
+Esports needs its own detector: casters talk continuously, so speech energy is
+high everywhere and cannot separate a squad wipe from a rotation. See
+[EsportsClipper/README.md](EsportsClipper/README.md).
 
 ---
 

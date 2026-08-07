@@ -103,7 +103,7 @@ def compute_crop(info: VideoInfo) -> tuple[int, int, int, int]:
 
 def _build_filter(
     info: VideoInfo,
-    subtitle_name: str,
+    subtitle_name: str | None,
     sendcmd_name: str | None,
 ) -> str:
     """Filter chain: crop to 9:16, scale, then burn in the captions.
@@ -111,6 +111,9 @@ def _build_filter(
     Every file is referenced by bare name; FFmpeg runs with cwd set to their
     folder so Windows drive letters never reach the filtergraph parser, where
     a colon separates arguments.
+
+    subtitle_name is None when captions are turned off - the clip is still
+    cropped, tracked and scaled, it simply carries no burned-in text.
     """
     crop_w, crop_h, x, y = compute_crop(info)
 
@@ -121,7 +124,8 @@ def _build_filter(
     stages.append(f"crop={crop_w}:{crop_h}:{x}:{y}")
     stages.append(f"scale={config.TARGET_WIDTH}:{config.TARGET_HEIGHT}:flags=lanczos")
     stages.append("setsar=1")
-    stages.append(f"subtitles={subtitle_name}")
+    if subtitle_name:
+        stages.append(f"subtitles={subtitle_name}")
     return ",".join(stages)
 
 
@@ -132,14 +136,19 @@ def render_part(
     output_path: Path,
     crop_path: list[tracker.CropKeyframe] | None = None,
     title: str | None = None,
+    language: str | None = None,
 ) -> Path:
     """Render one part of a clip as a captioned vertical video."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_") as tmp:
         work_dir = Path(tmp)
-        subtitle_name = "subs.ass"
-        ass_writer.write_ass(part.groups, work_dir / subtitle_name)
+
+        subtitle_name = None
+        if config.BURN_CAPTIONS:
+            subtitle_name = "subs.ass"
+            # The font follows the language: the default has Latin glyphs only.
+            ass_writer.write_ass(part.groups, work_dir / subtitle_name, language)
 
         sendcmd_name = None
         if crop_path:

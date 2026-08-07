@@ -64,7 +64,35 @@ def _initial_prompt() -> str | None:
     return ", ".join(parts) + "."
 
 
-def transcribe_words(wav_path: Path, title: str | None = None) -> list[Word]:
+def detect_language(wav_path: Path) -> str | None:
+    """Work out what is being spoken, once, so every part agrees.
+
+    A configured language always wins - if the user says the stream is Urdu,
+    detection cannot overrule them.
+    """
+    if config.WHISPER_LANGUAGE:
+        return config.WHISPER_LANGUAGE
+
+    model = _load_model()
+    try:
+        _segments, info = model.transcribe(str(wav_path), vad_filter=True)
+        language = getattr(info, "language", None)
+        probability = getattr(info, "language_probability", 0.0) or 0.0
+    except Exception:
+        return None
+
+    if not language:
+        return None
+
+    print(f"    language: {language} ({probability:.0%} confident)")
+    return str(language)
+
+
+def transcribe_words(
+    wav_path: Path,
+    title: str | None = None,
+    language: str | None = None,
+) -> list[Word]:
     """Transcribe audio into individually timed words.
 
     `title` is accepted and ignored; see _initial_prompt for why.
@@ -73,7 +101,7 @@ def transcribe_words(wav_path: Path, title: str | None = None) -> list[Word]:
 
     segments, _info = model.transcribe(
         str(wav_path),
-        language=config.WHISPER_LANGUAGE,
+        language=language or config.WHISPER_LANGUAGE,
         word_timestamps=True,
         # Skips long silences, which keeps timestamps from drifting.
         vad_filter=True,

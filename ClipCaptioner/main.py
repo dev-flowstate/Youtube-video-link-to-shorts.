@@ -20,22 +20,55 @@ import pipeline
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Burn clipper-style captions into vertical clips.")
+    parser = argparse.ArgumentParser(description="Turn clips into captioned vertical Shorts.")
     parser.add_argument("--input", type=Path, default=config.INPUT_DIR, help="Folder of source clips.")
     parser.add_argument("--output", type=Path, default=config.OUTPUT_DIR, help="Folder for rendered clips.")
     parser.add_argument("--only", type=str, default=None, help="Only process clips whose name contains this text.")
+
+    captions = parser.add_mutually_exclusive_group()
+    captions.add_argument("--captions", dest="captions", action="store_true", default=None,
+                          help="Burn in captions without asking.")
+    captions.add_argument("--no-captions", dest="captions", action="store_false",
+                          help="Skip captions; still crop to vertical and track faces.")
+
+    parser.add_argument("--language", type=str, default=None,
+                        help="Force a language code (e.g. ur). Default is to detect it.")
     return parser.parse_args()
+
+
+def _ask_about_captions() -> bool:
+    """Ask whether to burn captions in.
+
+    Worth asking rather than assuming: commentary in a language the model
+    handles poorly can caption badly enough to be worse than no captions, and
+    a clip destined for a compilation may not want them at all.
+    """
+    try:
+        answer = input("Burn captions into these clips? [Y/n] ").strip().lower()
+    except EOFError:
+        # Piped or scheduled run - carry on rather than hang waiting on stdin.
+        return True
+
+    return answer not in {"n", "no"}
 
 
 def main() -> int:
     args = _parse_args()
 
-    print("Clip Captioner")
+    if args.language:
+        config.WHISPER_LANGUAGE = args.language
+    config.BURN_CAPTIONS = args.captions if args.captions is not None else _ask_about_captions()
+
+    language_note = config.WHISPER_LANGUAGE or "auto-detect"
+
+    print("\nClip Captioner")
     print("=" * 14)
-    print(f"Input:  {args.input}")
-    print(f"Output: {args.output}")
-    print(f"Model:  {config.WHISPER_MODEL} ({config.WHISPER_DEVICE}/{config.WHISPER_COMPUTE_TYPE})")
-    print(f"Format: {config.TARGET_WIDTH}x{config.TARGET_HEIGHT}\n")
+    print(f"Input:    {args.input}")
+    print(f"Output:   {args.output}")
+    print(f"Model:    {config.WHISPER_MODEL} ({config.WHISPER_DEVICE}/{config.WHISPER_COMPUTE_TYPE})")
+    print(f"Language: {language_note}")
+    print(f"Captions: {'burned in' if config.BURN_CAPTIONS else 'off'}")
+    print(f"Format:   {config.TARGET_WIDTH}x{config.TARGET_HEIGHT}\n")
 
     try:
         ffmpeg_tools.resolve_tool_dir()

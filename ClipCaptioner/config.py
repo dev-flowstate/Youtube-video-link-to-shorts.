@@ -34,8 +34,23 @@ WHISPER_MODEL = "small"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 
-# Force a language to skip auto-detection. None means detect.
-WHISPER_LANGUAGE: str | None = "en"
+# Language of the speech. None auto-detects, which is the right default: not
+# every stream is in English, and *forcing* a language makes Whisper decode
+# foreign speech into that language, producing transliterated nonsense rather
+# than a translation or an honest failure. Set a code like "en" or "ur" only
+# when you already know what the source is.
+WHISPER_LANGUAGE: str | None = None
+
+# Detection is run once per clip and pinned for all of its parts. Per-part
+# detection was rejected: a part dominated by gunfire or music can detect
+# differently from its neighbour, so one clip would caption in two languages.
+DETECT_LANGUAGE_ONCE = True
+
+# Burn the captions into the video. Turned into a prompt at startup, or set
+# from the command line with --captions / --no-captions. With this off the
+# clips are still cropped to vertical, face-tracked, titled and named - only
+# the subtitle burn-in is skipped.
+BURN_CAPTIONS = True
 
 # Names and jargon Whisper should expect. The model biases towards this text
 # when decoding, which is the difference between "WILLEY" and "Willy".
@@ -69,8 +84,45 @@ MIN_GROUP_DURATION_S = 0.30
 # ---------------------------------------------------------------------------
 
 # Both are installed on Windows by default. "Impact" is narrower and taller.
+# Used for Latin scripts only - see SCRIPT_FONTS.
 FONT_NAME = "Arial Black"
 FONT_SIZE = 88
+
+# Arial Black carries no Arabic, Devanagari or CJK glyphs, so captioning a
+# non-English stream with it renders every word as an empty box. The font is
+# therefore chosen from the detected language. Every entry below was confirmed
+# installed on this machine; a language with no entry falls back to FONT_NAME.
+#
+# Right-to-left scripts need no special handling here: the bundled FFmpeg
+# reports libfribidi and libharfbuzz, so libass reorders and shapes them once
+# the font actually has the glyphs.
+SCRIPT_FONTS: dict[str, str] = {
+    # Arabic script
+    "ur": "Segoe UI",   # Urdu - PMWC ships a [UR] feed
+    "ar": "Segoe UI",
+    "fa": "Segoe UI",
+    "ps": "Segoe UI",
+    # Devanagari and neighbours
+    "hi": "Nirmala UI",
+    "mr": "Nirmala UI",
+    "ne": "Nirmala UI",
+    "bn": "Nirmala UI",
+    "pa": "Nirmala UI",
+    "ta": "Nirmala UI",
+    "te": "Nirmala UI",
+    # CJK
+    "zh": "Microsoft YaHei",
+    "ja": "Yu Gothic",
+    "ko": "Malgun Gothic",
+    # Cyrillic, Greek and the rest of Latin are covered by the default.
+}
+
+
+def font_for_language(language: str | None) -> str:
+    """Pick a font whose glyphs cover the language's script."""
+    if not language:
+        return FONT_NAME
+    return SCRIPT_FONTS.get(language.lower().split("-")[0], FONT_NAME)
 
 # Clear space either side of the caption, in pixels. Text wider than
 # TARGET_WIDTH minus twice this wraps to a second line rather than running off
