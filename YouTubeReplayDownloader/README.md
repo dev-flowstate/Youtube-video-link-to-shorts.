@@ -5,19 +5,37 @@ one as its own MP4 clip.
 
 ## How moments are found
 
-Two signals, tried best-first. Whichever works is reported when you run it.
+Three signals, tried best-first. Whichever works is reported when you run it.
 
 | Signal | Used when | Quality |
 |---|---|---|
 | **Most replayed** | Normal videos, and older broadcasts | Best — a direct measure of what viewers rewatched |
-| **Chat activity** | Past live streams with chat replay | Strong — message-rate spikes are what human clippers scrub for |
+| **Chat activity** | Past streams with chat replay | Strong — message-rate spikes are what human clippers scrub for |
+| **Speech energy** | Anything else, including live | Decent — reads the speaker instead of the audience |
 
-Live streams have no most-replayed graph until well after the broadcast ends,
-which is why chat is the fallback rather than a failure.
+The first two measure the audience, and a stream can have neither. A
+most-replayed graph takes days to appear, and chat replay is not published the
+moment a broadcast ends — so a stream that finished an hour ago has nothing to
+go on. Speech energy needs no external data at all, which is what makes live
+and just-ended streams workable.
 
-Both measure real audience reaction. Loudness detection was tried and removed:
-it flagged loud intros and background music as readily as real moments, and a
-wrong clip costs more than a missing one.
+### Speech energy
+
+Raw loudness was tried once and abandoned, because it flags an intro sting or
+background music as readily as a real moment. This is not that. Loudness is
+weighted by how much a bucket actually **sounds like speech**: talking carries
+a steady rhythm of short gaps — breaths, syllable breaks, turn-taking — while
+music, applause and room noise run continuous. A stretch with no gaps at all
+is not someone making a point, however loud it is.
+
+The effect, on a synthetic timeline: loud music scores **0.15**, loud speech
+scores **0.89**.
+
+Loudness is also rescaled across the whole recording rather than measured
+against a fixed level, so a quiet recording and a loud one rank the same way.
+
+It is fast — a 55-minute broadcast analysed in about 35 seconds, well under
+what fetching chat costs on a stream that size.
 
 ## Requirements
 
@@ -51,9 +69,13 @@ MrBeast [03m42s-04m12s].mp4
 - `https://www.youtube.com/live/VIDEO_ID` — past broadcasts
 - `https://www.youtube.com/embed/VIDEO_ID`
 
-Not supported: Shorts, playlists, several URLs at once, and streams that are
-**still broadcasting** — a clip cannot be cut from a video that is still
-growing. Wait for the stream to end.
+Streams that are **still broadcasting** now work: the part aired so far is
+pulled and clipped. Be aware that this fetches the broadcast from its
+beginning, so a stream that has been running for hours takes a long time to
+download before anything can be analysed. Clipping it after it ends is far
+faster and gives better moments.
+
+Not supported: Shorts, playlists, and several URLs at once.
 
 ## Settings
 

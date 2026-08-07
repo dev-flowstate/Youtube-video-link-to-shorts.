@@ -68,8 +68,17 @@ class SpeechMap:
         return 1.0 - (self.silence_seconds_between(start_s, end_s) / span)
 
 
-def download_audio(youtube_url: str, work_dir: Path) -> Path:
-    """Fetch the audio track only - far smaller and faster than the video."""
+def download_audio(
+    youtube_url: str,
+    work_dir: Path,
+    live_from_start: bool = False,
+) -> Path:
+    """Fetch the audio track only - far smaller and faster than the video.
+
+    live_from_start pulls a broadcast that is still running from its
+    beginning rather than from the live edge, which is what makes an
+    in-progress stream analysable at all.
+    """
     canonical_url = parse_youtube_url(youtube_url)
     base = work_dir / f"speech_{uuid.uuid4().hex}"
 
@@ -81,6 +90,8 @@ def download_audio(youtube_url: str, work_dir: Path) -> Path:
         "noprogress": True,
         "retries": 5,
     }
+    if live_from_start:
+        options["live_from_start"] = True
     options.update(ffmpeg_location_option())
 
     try:

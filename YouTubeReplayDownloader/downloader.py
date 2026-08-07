@@ -66,6 +66,9 @@ def _download_full_video(youtube_url: str, work_dir: Path) -> Path:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        # Pulls a running broadcast from its beginning instead of the live
+        # edge. Ignored for anything that is not live, so it is always on.
+        "live_from_start": True,
     }
     options.update(ffmpeg_location_option())
 

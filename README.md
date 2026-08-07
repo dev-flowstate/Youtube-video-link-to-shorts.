@@ -31,12 +31,19 @@ available:
 | Signal | Used when |
 |---|---|
 | **Most replayed** | Normal videos and older broadcasts |
-| **Chat activity** | Past live streams — message-rate spikes |
+| **Chat activity** | Past streams — message-rate spikes |
+| **Speech energy** | Anything else, including live |
 
-Live streams have no most-replayed graph until well after they end, so chat
-stands in. Both signals measure real audience reaction. Streams that are
-**still broadcasting** are rejected: a clip cannot be cut from a video that is
-still growing.
+The first two measure the audience, and a stream can have neither: a
+most-replayed graph takes days to appear, and chat replay is not published the
+moment a broadcast ends. Speech energy reads the speaker instead — loudness
+weighted by how much a passage actually sounds like talking, so music and
+applause cannot outrank a real moment. It needs no external data, which is
+what makes live and just-ended streams workable.
+
+Streams that are **still broadcasting** are clipped from the part aired so
+far. That fetches the broadcast from its beginning, so a long-running stream
+takes a while to download; clipping it after it ends is much faster.
 
 ### Step 2 — `ClipCaptioner`
 
