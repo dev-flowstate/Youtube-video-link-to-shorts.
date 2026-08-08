@@ -130,12 +130,18 @@ def extract(audio_path: Path) -> FrameFeatures:
 
             spectra = _spectra(frames, window)
 
-            # Flux compares against the last frame of the previous chunk too,
-            # so the seam does not produce a false onset or miss a real one.
-            reference = spectra if previous_spectrum is None else np.vstack(
-                (previous_spectrum[None, :], spectra)
-            )
-            diff = np.diff(reference, axis=0)
+            # Flux is a difference, so it needs a frame to look back at. Later
+            # chunks borrow the last frame of the previous one, which keeps the
+            # seam from reading as a false onset. The very first frame of the
+            # track has no predecessor, so it is compared against itself and
+            # scores zero.
+            #
+            # Prepending something either way matters: without it the first
+            # chunk yields one value fewer than it has frames, while every
+            # other feature yields one per frame, and the arrays drift apart by
+            # exactly one for the rest of the run.
+            leading = previous_spectrum if previous_spectrum is not None else spectra[0]
+            diff = np.diff(np.vstack((leading[None, :], spectra)), axis=0)
             flux_parts.append(np.maximum(diff, 0.0).sum(axis=1))
             previous_spectrum = spectra[-1]
 
@@ -154,9 +160,24 @@ def extract(audio_path: Path) -> FrameFeatures:
     if not flux_parts:
         raise FeatureExtractionFailed("Audio produced no analysable frames.")
 
+    flux = np.concatenate(flux_parts)
+    hf_ratio = np.concatenate(hf_parts)
+    speech_energy = np.concatenate(speech_parts)
+
+    # These three are combined element-wise downstream, so any drift between
+    # them surfaces hours later as an unreadable broadcast error. Caught here,
+    # where the cause is still obvious.
+    lengths = {len(flux), len(hf_ratio), len(speech_energy)}
+    if len(lengths) != 1:
+        raise FeatureExtractionFailed(
+            "Feature arrays came out different lengths "
+            f"(flux {len(flux)}, hf {len(hf_ratio)}, speech {len(speech_energy)}) - "
+            "the chunk seam handling is wrong."
+        )
+
     return FrameFeatures(
-        flux=np.concatenate(flux_parts),
-        hf_ratio=np.concatenate(hf_parts),
-        speech_energy=np.concatenate(speech_parts),
+        flux=flux,
+        hf_ratio=hf_ratio,
+        speech_energy=speech_energy,
         hop_seconds=HOP / SAMPLE_RATE,
     )
