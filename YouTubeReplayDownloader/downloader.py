@@ -27,6 +27,12 @@ class DownloadError(Exception):
 # with the native downloader, then cut every clip locally.
 SOURCE_FORMAT = "bestvideo+bestaudio/best"
 
+# How far past its requested end a clip may run before it counts as wrong.
+# Clips are cut with a stream copy, which can only land on a keyframe, so the
+# end drifts on to the next one. YouTube VODs of long broadcasts space those
+# several seconds apart.
+KEYFRAME_OVERSHOOT_S = 12.0
+
 _VIDEO_CACHE: dict[str, Path] = {}
 
 
@@ -173,8 +179,23 @@ def _verify_clip(output_path: Path, segment: ReplaySegment) -> None:
         raise DownloadError(f"Invalid duration for {output_path.name}.") from exc
 
     expected = segment.duration_s
-    tolerance = max(2.0, expected * 0.15)
-    if abs(actual_duration - expected) > tolerance:
+
+    # Cutting with a stream copy can only land on a keyframe, so a clip
+    # routinely runs on past the requested end - by up to one group of
+    # pictures, which on a YouTube VOD is commonly five to ten seconds. That
+    # is harmless: a little extra footage at the end costs nothing, and
+    # re-encoding every clip to trim it would cost hours.
+    #
+    # Coming up *short* is the real fault, since it means the cut was
+    # truncated, so the two directions are judged differently. A single
+    # proportional tolerance was used before and broke as soon as clips got
+    # shorter: a 28s esports clip allowed 4.2s of slack against a 6s keyframe
+    # overshoot, where the same drift on a 90s podcast clip passed easily.
+    overshoot = actual_duration - expected
+    allowed_over = max(KEYFRAME_OVERSHOOT_S, expected * 0.25)
+    allowed_under = max(2.0, expected * 0.15)
+
+    if overshoot > allowed_over or -overshoot > allowed_under:
         raise DownloadError(
             f"Clip duration mismatch for {output_path.name}: "
             f"expected ~{expected:.1f}s, got {actual_duration:.1f}s."
@@ -216,16 +237,40 @@ def download_all_segments(
     print(f"{len(missing)} of {len(targets)} clip(s) missing.")
 
     saved: list[Path] = []
+    failed: list[str] = []
+
     try:
         print("Downloading source video once (highest quality)...")
         source_video = _download_full_video(youtube_url, output_dir)
         print(f"Source ready: {source_video.name}\n")
 
         for segment, output_path in tqdm(missing, desc="Cutting clips", unit="clip"):
-            saved_path = download_segment(youtube_url, segment, output_path, source_video)
-            _verify_clip(saved_path, segment)
-            saved.append(saved_path)
+            # One bad cut must not lose the batch. The source download is the
+            # expensive part and it has already happened by this point, so
+            # aborting here throws away every remaining clip and the source
+            # with it, forcing the whole download again for one bad segment.
+            try:
+                saved_path = download_segment(youtube_url, segment, output_path, source_video)
+                _verify_clip(saved_path, segment)
+                saved.append(saved_path)
+            except DownloadError as exc:
+                failed.append(f"{output_path.name}: {exc}")
+                output_path.unlink(missing_ok=True)
+                tqdm.write(f"  skipped {output_path.name}")
     finally:
         cleanup_cached_videos()
+
+    if failed:
+        print(f"\n{len(failed)} clip(s) could not be cut:")
+        for note in failed[:10]:
+            print(f"  - {note}")
+        if len(failed) > 10:
+            print(f"  ... and {len(failed) - 10} more")
+
+    if not saved and failed:
+        raise DownloadError(
+            f"Every clip failed to cut ({len(failed)} of {len(failed)}). "
+            "The source download may be damaged."
+        )
 
     return saved
