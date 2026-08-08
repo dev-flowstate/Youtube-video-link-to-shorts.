@@ -92,7 +92,7 @@ def _register_with_yt_dlp(ffmpeg_dir: Path) -> None:
     except ImportError:
         return
 
-    FFmpegPostProcessor._ffmpeg_location.set(str(ffmpeg_dir))
+    FFmpegPostProcessor._ffmpeg_location.set(str(ffmpeg_dir))  # type: ignore[arg-type]  # declared ContextVar[None] upstream
 
 
 def ensure_ffmpeg_available() -> Path:

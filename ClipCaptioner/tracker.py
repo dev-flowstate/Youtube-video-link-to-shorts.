@@ -206,12 +206,22 @@ def _merge_short_shots(shots: list[list[_Sample]]) -> list[list[_Sample]]:
 
 
 def _fill_gaps(shot: list[_Sample], fallback: float) -> list[float]:
-    """Linearly interpolate across frames where no face was found."""
-    values: list[float | None] = [sample.center_x for sample in shot]
+    """Linearly interpolate across frames where no face was found.
 
-    known = [index for index, value in enumerate(values) if value is not None]
+    Detected positions are copied into a fully populated list up front rather
+    than filling holes in place. Every slot then provably holds a number, so
+    the arithmetic below needs no None handling and the return type is honest.
+    """
+    detected = [sample.center_x for sample in shot]
+    known = [index for index, value in enumerate(detected) if value is not None]
     if not known:
-        return [fallback] * len(values)
+        return [fallback] * len(detected)
+
+    values: list[float] = [fallback] * len(detected)
+    for index in known:
+        found = detected[index]
+        assert found is not None  # by construction of `known`
+        values[index] = float(found)
 
     # Hold the first and last known values out to the shot's edges.
     for index in range(known[0]):
@@ -220,16 +230,16 @@ def _fill_gaps(shot: list[_Sample], fallback: float) -> list[float]:
         values[index] = values[known[-1]]
 
     for left, right in zip(known, known[1:]):
-        if right - left <= 1:
+        span = right - left
+        if span <= 1:
             continue
         start_value = values[left]
         end_value = values[right]
-        span = right - left
         for offset in range(1, span):
             ratio = offset / span
             values[left + offset] = start_value + (end_value - start_value) * ratio
 
-    return [float(value) for value in values]
+    return values
 
 
 def _reject_outliers(values: list[float], info: VideoInfo) -> list[float]:

@@ -38,7 +38,7 @@ def fetch_video_title(youtube_url: str) -> str:
         "skip_download": True,
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]  # yt-dlp's stubs declare a TypedDict; a plain options dict is what the library actually takes
         info = ydl.extract_info(canonical_url, download=False)
 
     title = info.get("title")
@@ -73,7 +73,7 @@ def _download_full_video(youtube_url: str, work_dir: Path) -> Path:
     options.update(ffmpeg_location_option())
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with yt_dlp.YoutubeDL(options) as ydl:  # type: ignore[arg-type]  # yt-dlp's stubs declare a TypedDict; a plain options dict is what the library actually takes
             ydl.download([cache_key])
     except Exception as exc:
         raise DownloadError(f"Failed to download source video: {exc}") from exc

@@ -39,7 +39,7 @@ def fetch_video_facts(youtube_url: str) -> tuple[float, bool]:
     canonical_url = parse_youtube_url(youtube_url)
     options = {"quiet": True, "no_warnings": True, "skip_download": True}
 
-    with yt_dlp.YoutubeDL(options) as ydl:
+    with yt_dlp.YoutubeDL(options) as ydl:  # type: ignore[arg-type]  # yt-dlp's stubs declare a TypedDict; a plain options dict is what the library actually takes
         info = ydl.extract_info(canonical_url, download=False)
 
     duration = info.get("duration") or 0.0

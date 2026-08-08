@@ -95,7 +95,7 @@ def download_audio(
     options.update(ffmpeg_location_option())
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with yt_dlp.YoutubeDL(options) as ydl:  # type: ignore[arg-type]  # yt-dlp's stubs declare a TypedDict; a plain options dict is what the library actually takes
             ydl.download([canonical_url])
     except Exception as exc:
         raise SpeechAnalysisFailed(f"Could not download audio: {exc}") from exc

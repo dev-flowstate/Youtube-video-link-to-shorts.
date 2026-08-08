@@ -1,0 +1,8 @@
+{
+  "//": "This project reuses YouTubeReplayDownloader's modules, which shared.py puts on sys.path at runtime. A static analyser cannot see a path added at runtime, so it is declared here. Scoped to this folder rather than the workspace: ClipCaptioner also has config.py and main.py, and adding both folders workspace-wide makes 'import config' resolve to the wrong project.",
+  "extraPaths": [
+    "../YouTubeReplayDownloader"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "error"
+}

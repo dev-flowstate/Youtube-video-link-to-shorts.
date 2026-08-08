@@ -46,7 +46,7 @@ def _download_chat(youtube_url: str, work_dir: Path) -> Path:
     }
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with yt_dlp.YoutubeDL(options) as ydl:  # type: ignore[arg-type]  # yt-dlp's stubs declare a TypedDict; a plain options dict is what the library actually takes
             ydl.download([youtube_url])
     except Exception as exc:
         raise ChatDataNotAvailable(f"Could not download chat replay: {exc}") from exc
