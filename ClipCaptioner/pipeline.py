@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import tempfile
 import threading
@@ -63,6 +64,30 @@ def transcribe_clip(clip: Path) -> tuple[list[CaptionGroup], str | None]:
         words = transcriber.transcribe_words(wav_path, title=clip.stem, language=language)
 
     return caption_builder.build_groups(words), language
+
+
+def apply_content_marker(input_dir: Path) -> str | None:
+    """Honour a content.json left by whatever produced these clips.
+
+    EsportsClipper writes one saying the footage is gameplay, which turns face
+    tracking off. There is no speaker to follow in a match feed, so the
+    detector locks onto a webcam corner, a crowd shot or a logo and pans the
+    crop around chasing it - worse than simply holding the centre.
+    """
+    marker = input_dir / "content.json"
+    if not marker.exists():
+        return None
+
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Ignoring unreadable {marker.name}: {exc}")
+        return None
+
+    if data.get("face_tracking") is False:
+        config.TRACK_FACES = False
+
+    return data.get("content_type")
 
 
 def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None:

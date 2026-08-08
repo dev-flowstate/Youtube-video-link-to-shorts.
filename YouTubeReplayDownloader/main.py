@@ -24,7 +24,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://www.youtube.com/live/eyhpuALAiog?si=hwrHcCTm_3M3DIwg"
+YOUTUBE_URL = "https://youtu.be/__vLZslytN0?si=HoCO6P6I1etX_7u5 c   "
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -55,6 +55,18 @@ FIXED_CLIP_COUNT: int | None = None
 # ceiling before viewers drop off.
 MAX_CLIP_SECONDS = 90.0
 
+# What kind of video this is, which decides what evidence is trusted.
+#   "talk"    - podcasts and interviews. Most-replayed and chat only.
+#   "general" - anything else. Also allows speech energy.
+#   None      - ask each run.
+#
+# Speech energy is deliberately off for talk content: it measures how loud the
+# speaker is, so on a podcast it finds the shouting rather than the point being
+# made. For a stream with no audience data it is the only thing available, but
+# a podcast has a most-replayed graph and should say so plainly when it does
+# not, rather than quietly picking clips on volume.
+CONTENT_TYPE: str | None = None
+
 # Align clip edges with pauses in speech so they start and end on a sentence
 # rather than mid-word, and skip candidates that are mostly silence. Costs one
 # audio-only download before the video is fetched.
@@ -65,6 +77,32 @@ SNAP_TO_SPEECH = True
 # which it can only do if there is footage past the cut to reach into.
 # Unused padding is dropped there, so it costs a little download, not runtime.
 TAIL_PADDING_SECONDS = 20.0
+
+
+def _ask_content_type() -> str | None:
+    """Ask what the video is, because it decides which signals are trusted.
+
+    Speech energy suits a stream with no audience data, but for a podcast it
+    finds whoever is loudest rather than whatever is interesting. Gameplay
+    needs a different detector entirely, so that answer points elsewhere
+    instead of producing clips picked on the wrong evidence.
+
+    Returns the chosen type, or None if the user should use EsportsClipper.
+    """
+    print("What kind of video is this?")
+    print("  [1] Podcast, interview or talk   - most-replayed and chat only")
+    print("  [2] General video or stream      - also allows speech energy")
+    print("  [3] Gaming or esports            - use EsportsClipper instead")
+
+    try:
+        answer = input("Choose [1]: ").strip() or "1"
+    except EOFError:
+        # Piped or scheduled run: the safe default is the strict one.
+        return "talk"
+
+    if answer == "3":
+        return None
+    return "general" if answer == "2" else "talk"
 
 
 def _clip_budget(duration_s: float) -> int:
@@ -182,14 +220,26 @@ def main() -> int:
 
     print("YouTube Highlight Downloader")
     print("=" * 28)
-    print(f"URL: {YOUTUBE_URL}")
+    print(f"URL: {YOUTUBE_URL}\n")
+
+    content = CONTENT_TYPE or _ask_content_type()
+    if content is None:
+        print("\nGameplay needs a different detector - casters and gunfire, not")
+        print("speech. Use EsportsClipper, which is built for it:\n")
+        print("  cd ../EsportsClipper")
+        print("  py main.py")
+        return 0
+
+    allow_energy = content != "talk"
+    print(f"\nContent: {content}")
+    print(f"Signals: most-replayed, chat{', speech energy' if allow_energy else ''}")
     print(f"Output folder: {output_dir}\n")
 
     try:
         canonical_url = parse_youtube_url(YOUTUBE_URL)
 
         print("Looking for clip-worthy moments...")
-        moments = find_moments(canonical_url)
+        moments = find_moments(canonical_url, allow_speech_energy=allow_energy)
         print(f"Signal: {moments.source} ({len(moments.points)} data points)")
 
         # Leave room for boundary snapping to widen a clip out to the nearest

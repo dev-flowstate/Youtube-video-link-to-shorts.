@@ -9,6 +9,7 @@ to ClipCaptioner to turn them into Shorts.
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -38,6 +39,26 @@ def _apply_quality_cap() -> None:
     downloader.SOURCE_FORMAT = (
         f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
     )
+
+
+def _mark_output_as_gameplay(output_dir: Path) -> None:
+    """Leave a note saying what these clips are.
+
+    ClipCaptioner reads this and turns face tracking off. Gameplay has no
+    speaker to follow - the detector would lock onto a webcam corner, a crowd
+    shot or a logo and pan the crop around chasing it, which is worse than
+    holding the centre where the action is.
+    """
+    marker = output_dir / "content.json"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps({"content_type": "gameplay", "face_tracking": False}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        # Only a hint for the next stage; never lose clips over it.
+        print(f"Could not write {marker.name}: {exc}")
 
 
 def _print_fights(segments) -> None:
@@ -123,6 +144,7 @@ def main() -> int:
         )
 
         print(f"\n{len(saved)} clip(s) written.")
+        _mark_output_as_gameplay(output_dir)
 
         if config.MAKE_COMPILATION and len(saved) >= 2:
             try:

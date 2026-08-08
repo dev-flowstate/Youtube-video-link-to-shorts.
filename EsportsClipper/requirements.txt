@@ -3,3 +3,7 @@ numpy>=2.0.0
 scipy>=1.15.0
 requests>=2.32.0
 tqdm>=4.67.0
+# Reached indirectly: the sibling's ffmpeg_utils imports it inside a function
+# as a last-resort way to find an FFmpeg binary, so a module-level import
+# check never sees it.
+imageio-ffmpeg>=0.6.0

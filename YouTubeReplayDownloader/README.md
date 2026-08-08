@@ -5,13 +5,33 @@ one as its own MP4 clip.
 
 ## How moments are found
 
+It asks what the video is first, because that decides which evidence is
+trusted:
+
+```
+What kind of video is this?
+  [1] Podcast, interview or talk   - most-replayed and chat only
+  [2] General video or stream      - also allows speech energy
+  [3] Gaming or esports            - use EsportsClipper instead
+```
+
+Set `CONTENT_TYPE` in `main.py` to `"talk"` or `"general"` to skip the
+question. A piped run answers `talk`, the stricter option.
+
 Three signals, tried best-first. Whichever works is reported when you run it.
 
 | Signal | Used when | Quality |
 |---|---|---|
 | **Most replayed** | Normal videos, and older broadcasts | Best — a direct measure of what viewers rewatched |
 | **Chat activity** | Past streams with chat replay | Strong — message-rate spikes are what human clippers scrub for |
-| **Speech energy** | Anything else, including live | Decent — reads the speaker instead of the audience |
+| **Speech energy** | General mode only, including live | Decent — reads the speaker instead of the audience |
+
+**Speech energy is off for talk content on purpose.** It measures how loud the
+speaker is, so on a podcast it finds the shouting rather than the point being
+made. A podcast that has no most-replayed graph should say so plainly instead
+of quietly returning clips picked on volume — a wrong clip costs more than a
+missing one. It stays available for general video and live streams, where
+there is often no audience data at all.
 
 The first two measure the audience, and a stream can have neither. A
 most-replayed graph takes days to appear, and chat replay is not published the

@@ -177,6 +177,12 @@ Details that are easy to get wrong if you edit this:
   and encoding runs on the GPU, so overlapping them costs nothing in
   contention and recovers most of the transcription time. A one-item queue
   keeps at most one clip's work in flight.
+- **Face tracking turns itself off for gameplay.** If the input folder holds a
+  `content.json` saying the footage is gameplay — EsportsClipper writes one —
+  the crop holds the centre instead. A match feed has no speaker to follow, so
+  the detector locks onto a webcam corner, a crowd shot or a logo and pans the
+  crop around chasing it. `--face-tracking` / `--no-face-tracking` override the
+  marker either way.
 - **Face choice follows the nearest subject, not the largest.** With two
   people at similar distance, tiny size changes flip which is momentarily
   bigger, and the crop swings between them. Size only decides after a cut,

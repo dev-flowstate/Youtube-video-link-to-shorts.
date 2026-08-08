@@ -33,6 +33,12 @@ def _parse_args() -> argparse.Namespace:
 
     parser.add_argument("--language", type=str, default=None,
                         help="Force a language code (e.g. ur). Default is to detect it.")
+
+    tracking = parser.add_mutually_exclusive_group()
+    tracking.add_argument("--face-tracking", dest="face_tracking", action="store_true", default=None,
+                          help="Follow faces when cropping to vertical.")
+    tracking.add_argument("--no-face-tracking", dest="face_tracking", action="store_false",
+                          help="Hold the centre instead. Right for gameplay.")
     return parser.parse_args()
 
 
@@ -59,15 +65,25 @@ def main() -> int:
         config.WHISPER_LANGUAGE = args.language
     config.BURN_CAPTIONS = args.captions if args.captions is not None else _ask_about_captions()
 
+    # Whatever produced these clips may have left a note about what they are.
+    content_type = pipeline.apply_content_marker(args.input)
+
+    # An explicit flag always beats the marker.
+    if args.face_tracking is not None:
+        config.TRACK_FACES = args.face_tracking
+
     language_note = config.WHISPER_LANGUAGE or "auto-detect"
 
     print("\nClip Captioner")
     print("=" * 14)
     print(f"Input:    {args.input}")
     print(f"Output:   {args.output}")
+    if content_type:
+        print(f"Content:  {content_type}")
     print(f"Model:    {config.WHISPER_MODEL} ({config.WHISPER_DEVICE}/{config.WHISPER_COMPUTE_TYPE})")
     print(f"Language: {language_note}")
     print(f"Captions: {'burned in' if config.BURN_CAPTIONS else 'off'}")
+    print(f"Cropping: {'face-tracked' if config.TRACK_FACES else 'centred'}")
     print(f"Format:   {config.TARGET_WIDTH}x{config.TARGET_HEIGHT}\n")
 
     try:

@@ -26,6 +26,16 @@ Esports needs its own detector: casters talk continuously, so speech energy is
 high everywhere and cannot separate a squad wipe from a rotation. See
 [EsportsClipper/README.md](EsportsClipper/README.md).
 
+**The downloader asks what the video is** before it starts, because that
+decides which evidence it trusts. Talk content uses the most-replayed graph and
+chat only — speech energy is deliberately withheld there, since it finds
+whoever is loudest rather than whatever is interesting. Picking the gaming
+option points you at EsportsClipper instead.
+
+**Step 2 adapts too.** Clips from EsportsClipper carry a marker saying they are
+gameplay, and ClipCaptioner reads it and holds the crop centred instead of
+hunting for faces that a match feed does not have.
+
 ---
 
 ## What each step does

@@ -55,13 +55,27 @@ def _energy_moments(youtube_url: str, duration_s: float, live: bool) -> MomentDa
     return MomentData(points=points, source="speech energy", duration_s=measured)
 
 
-def find_moments(youtube_url: str) -> MomentData:
-    """Try each signal in order of quality and return the first that works."""
+def find_moments(youtube_url: str, allow_speech_energy: bool = True) -> MomentData:
+    """Try each signal in order of quality and return the first that works.
+
+    allow_speech_energy is off for talk content. Speech energy measures how
+    loud the speaker is, which for a podcast means it finds the shouting, not
+    the interesting part - a wrong clip costs more than a missing one. Saying
+    plainly that no audience data exists is more useful than quietly returning
+    clips picked on volume.
+    """
     duration_s, is_live = fetch_video_facts(youtube_url)
 
     # A running broadcast has no audience data of any kind and reports no
     # duration, so go straight to the audio and measure what exists so far.
     if is_live:
+        if not allow_speech_energy:
+            raise NoMomentSignal(
+                "This stream is still live, so it has no most-replayed graph "
+                "and no chat replay yet.\n"
+                "  Wait until the broadcast ends, or pick a content type that "
+                "allows the audio-based signal."
+            )
         print(
             "Stream is still live - clipping the part broadcast so far.\n"
             "  This pulls the broadcast from its beginning, so a stream that\n"
@@ -88,10 +102,19 @@ def find_moments(youtube_url: str) -> MomentData:
     else:
         attempts.append("duration unknown, skipped audience signals")
 
-    # A stream that has just ended has neither a replay graph nor published
-    # chat yet, which would otherwise leave nothing to clip for days.
     for attempt in attempts:
         print(f"  {attempt}")
+
+    if not allow_speech_energy:
+        raise NoMomentSignal(
+            "No audience data for this video, and speech energy is off for "
+            "talk content.\n"
+            "  It measures how loud the speaker is, which finds the shouting "
+            "rather than the point being made."
+        )
+
+    # A stream that has just ended has neither a replay graph nor published
+    # chat yet, which would otherwise leave nothing to clip for days.
     print("Falling back to speech energy.")
 
     try:
