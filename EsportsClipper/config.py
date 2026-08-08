@@ -12,7 +12,7 @@ from pathlib import Path
 # Source
 # ---------------------------------------------------------------------------
 
-STREAM_URL = "https://www.youtube.com/live/eyhpuALAiog"
+STREAM_URL = "https://www.youtube.com/live/BFOzTy2ML88?si=smO-PB85IA3vb91c"
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 

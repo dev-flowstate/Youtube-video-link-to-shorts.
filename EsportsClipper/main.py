@@ -14,13 +14,17 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Must come first: it puts YouTubeReplayDownloader on sys.path, and every
+# import below it that is not a local module lives there. Do not let an import
+# sorter move this - alphabetical order would break the run.
+import shared  # noqa: F401  isort:skip
+
 import audio_features
 import clip_windows
 import compilation
 import config
-import fight_detector
-import shared  # noqa: F401  (puts the sibling project on sys.path)
 import downloader
+import fight_detector
 import speech
 from downloader import DownloadError, download_all_segments, fetch_video_title
 from ffmpeg_utils import FFmpegNotFoundError
