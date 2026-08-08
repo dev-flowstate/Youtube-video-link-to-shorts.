@@ -27,11 +27,12 @@ class DownloadError(Exception):
 # with the native downloader, then cut every clip locally.
 SOURCE_FORMAT = "bestvideo+bestaudio/best"
 
-# How far past its requested end a clip may run before it counts as wrong.
-# Clips are cut with a stream copy, which can only land on a keyframe, so the
-# end drifts on to the next one. YouTube VODs of long broadcasts space those
-# several seconds apart.
-KEYFRAME_OVERSHOOT_S = 12.0
+# A clip running past its requested end is normal - a stream copy can only cut
+# on a keyframe. This is not that: it is the ceiling above which the cut
+# clearly never happened at all, and the file is a large piece of the source
+# rather than a clip. Set far above any plausible keyframe interval so ordinary
+# drift is never mistaken for it.
+RUNAWAY_CUT_S = 300.0
 
 _VIDEO_CACHE: dict[str, Path] = {}
 
@@ -179,25 +180,29 @@ def _verify_clip(output_path: Path, segment: ReplaySegment) -> None:
         raise DownloadError(f"Invalid duration for {output_path.name}.") from exc
 
     expected = segment.duration_s
-
-    # Cutting with a stream copy can only land on a keyframe, so a clip
-    # routinely runs on past the requested end - by up to one group of
-    # pictures, which on a YouTube VOD is commonly five to ten seconds. That
-    # is harmless: a little extra footage at the end costs nothing, and
-    # re-encoding every clip to trim it would cost hours.
-    #
-    # Coming up *short* is the real fault, since it means the cut was
-    # truncated, so the two directions are judged differently. A single
-    # proportional tolerance was used before and broke as soon as clips got
-    # shorter: a 28s esports clip allowed 4.2s of slack against a 6s keyframe
-    # overshoot, where the same drift on a 90s podcast clip passed easily.
     overshoot = actual_duration - expected
-    allowed_over = max(KEYFRAME_OVERSHOOT_S, expected * 0.25)
-    allowed_under = max(2.0, expected * 0.15)
 
-    if overshoot > allowed_over or -overshoot > allowed_under:
+    # Running long is not a fault. Cutting with a stream copy can only land on
+    # a keyframe, so a clip routinely runs past its requested end, and the
+    # extra footage costs nothing - the captioner trims to a complete thought
+    # afterwards regardless. Rejecting these threw away perfectly good clips
+    # over something that was never going to matter.
+    #
+    # The one overshoot worth catching is the pathological kind, where -t was
+    # ignored and the "clip" is the rest of the broadcast. That is orders of
+    # magnitude out, not seconds, so the ceiling is deliberately far above any
+    # keyframe interval.
+    if overshoot > max(RUNAWAY_CUT_S, expected * 3.0):
         raise DownloadError(
-            f"Clip duration mismatch for {output_path.name}: "
+            f"Cut did not take for {output_path.name}: "
+            f"expected ~{expected:.1f}s, got {actual_duration:.1f}s."
+        )
+
+    # Coming up short is the real fault - it means the cut was truncated and
+    # the moment the clip exists for may not be in it.
+    if -overshoot > max(2.0, expected * 0.15):
+        raise DownloadError(
+            f"Clip is short for {output_path.name}: "
             f"expected ~{expected:.1f}s, got {actual_duration:.1f}s."
         )
 
