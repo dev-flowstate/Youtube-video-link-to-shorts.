@@ -212,6 +212,27 @@ TRAINING_BROADCAST_B = "3Y-5L7XCJ94"  # Day 4 watchparty, streamer facecam
 # them at full height wastes an hour for detail nothing reads.
 REEL_MAX_HEIGHT = 720
 
+# Seconds dropped from each end of a reel. Every edit opens on a title card and
+# closes on a podium shot or an outro, and neither is a firefight.
+REEL_TRIM_SECONDS = 20.0
+
+# A reel row counts as a fight only if the game overlay is this present. Reels
+# cut to the crowd, to a caster, to a replay wipe - labelling those FIGHT would
+# teach the model that a cheering crowd is combat. Rows below the bar are left
+# unknown rather than negative: a reel is no evidence about what studio talk
+# looks like, and using it as such would poison the negative class.
+REEL_MIN_HUD = 0.45
+
+# How near a teacher verdict must land to a grid row to be that row's label.
+LABEL_MATCH_SECONDS = 1.0
+
+# How far each teacher verdict carries either side of itself. The classifier
+# looks once every 10s and the grid holds twenty rows in that time; those rows
+# are the same moment, and a label covering only one of them wastes nineteen.
+# Spreading always stops short of the next verdict, so a label never crosses
+# into a stretch the classifier judged differently.
+LABEL_SPREAD_SECONDS = 3.0
+
 # ---------------------------------------------------------------------------
 # Gunfire detection (audio fallback only - see USE_VISION)
 # ---------------------------------------------------------------------------
