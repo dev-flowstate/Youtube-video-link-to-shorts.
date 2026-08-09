@@ -48,16 +48,25 @@ def _apply_quality_cap() -> None:
 def _mark_output_as_gameplay(output_dir: Path) -> None:
     """Leave a note saying what these clips are.
 
-    ClipCaptioner reads this and turns face tracking off. Gameplay has no
-    speaker to follow - the detector would lock onto a webcam corner, a crowd
-    shot or a logo and pan the crop around chasing it, which is worse than
-    holding the centre where the action is.
+    ClipCaptioner reads this and changes two things.
+
+    Face tracking goes off: gameplay has no speaker to follow, so the detector
+    locks onto a webcam corner, a crowd shot or a logo and pans the crop around
+    chasing it.
+
+    Cropping becomes "fit": a match feed carries the minimap, the kill feed and
+    often the fight itself out at the edges, and cutting a tall slice out of the
+    middle throws all of it away. Fitting the whole frame keeps everything on
+    screen.
     """
     marker = output_dir / "content.json"
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
         marker.write_text(
-            json.dumps({"content_type": "gameplay", "face_tracking": False}, indent=2),
+            json.dumps(
+                {"content_type": "gameplay", "face_tracking": False, "crop_mode": "fit"},
+                indent=2,
+            ),
             encoding="utf-8",
         )
     except OSError as exc:

@@ -115,6 +115,13 @@ def _build_filter(
     subtitle_name is None when captions are turned off - the clip is still
     cropped, tracked and scaled, it simply carries no burned-in text.
     """
+    tail = ["setsar=1"]
+    if subtitle_name:
+        tail.append(f"subtitles={subtitle_name}")
+
+    if config.CROP_MODE == "fit":
+        return _fit_filter(tail)
+
     crop_w, crop_h, x, y = compute_crop(info)
 
     stages = []
@@ -123,10 +130,32 @@ def _build_filter(
         stages.append(f"sendcmd=f={sendcmd_name}")
     stages.append(f"crop={crop_w}:{crop_h}:{x}:{y}")
     stages.append(f"scale={config.TARGET_WIDTH}:{config.TARGET_HEIGHT}:flags=lanczos")
-    stages.append("setsar=1")
-    if subtitle_name:
-        stages.append(f"subtitles={subtitle_name}")
+    stages.extend(tail)
     return ",".join(stages)
+
+
+def _fit_filter(tail: list[str]) -> str:
+    """Whole frame, centred, over a blurred copy of itself.
+
+    Cropping gameplay to 9:16 discards the minimap, the kill feed and often
+    the fight, so the frame is shrunk to fit the width instead. The blurred
+    backdrop fills what would otherwise be black bars, which read as wasted
+    space in a Shorts feed.
+
+    The blur is done by shrinking and regrowing rather than with gblur, which
+    is accurate and far too slow to run over every frame of every clip.
+    """
+    width, height = config.TARGET_WIDTH, config.TARGET_HEIGHT
+    small = max(8, width // config.FIT_BACKDROP_BLUR)
+
+    return (
+        "split=2[bg][fg];"
+        f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},scale={small}:-2,scale={width}:{height}:flags=bilinear[bgb];"
+        f"[fg]scale={width}:-2:flags=lanczos[fgs];"
+        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
+        + ",".join(tail)
+    )
 
 
 def render_part(

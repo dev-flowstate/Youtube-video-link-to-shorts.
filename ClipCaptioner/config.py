@@ -172,8 +172,25 @@ AUDIO_BITRATE = "160k"
 # Face tracking
 # ---------------------------------------------------------------------------
 
+# How the 16:9 source becomes a 9:16 clip.
+#
+#   "crop" - cut a tall slice out of the frame. Right for a talking head: the
+#            subject fills the screen and the empty sides are no loss.
+#   "fit"  - shrink the whole frame to fit the width and fill the rest with a
+#            blurred copy of itself. Right for gameplay, where cropping throws
+#            away the minimap, the kill feed and often the fight itself.
+#
+# EsportsClipper marks its output as gameplay, which switches this to "fit"
+# automatically - see apply_content_marker in pipeline.py.
+CROP_MODE = "crop"
+
+# Blur strength of the backdrop in "fit" mode. Blurred by shrinking and
+# regrowing rather than with gblur, which is far too slow over a whole clip.
+FIT_BACKDROP_BLUR = 12
+
 # Follow faces when choosing the 9:16 crop window instead of always cropping
-# the centre. Falls back to centre framing whenever no face is found.
+# the centre. Falls back to centre framing whenever no face is found. Has no
+# effect in "fit" mode, where there is no crop window to move.
 TRACK_FACES = True
 
 # How often to look for a face, in samples per second. Higher tracks fast

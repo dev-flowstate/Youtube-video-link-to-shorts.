@@ -87,6 +87,10 @@ def apply_content_marker(input_dir: Path) -> str | None:
     if data.get("face_tracking") is False:
         config.TRACK_FACES = False
 
+    mode = data.get("crop_mode")
+    if mode in ("crop", "fit"):
+        config.CROP_MODE = mode
+
     return data.get("content_type")
 
 
