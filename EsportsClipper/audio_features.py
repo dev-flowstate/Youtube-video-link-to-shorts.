@@ -34,6 +34,12 @@ _HF_FROM = int(4000 / _BIN_HZ)          # gunfire is broadband, voice is not
 _SPEECH_FROM = int(300 / _BIN_HZ)
 _SPEECH_TO = int(3400 / _BIN_HZ)
 
+# Below speech. Explosions and a venue crowd both live down here, and so does
+# the rumble a mix picks up when a room is full. Summed in the same pass as the
+# others, so it costs one more slice per chunk and nothing else.
+_LF_FROM = int(60 / _BIN_HZ)
+_LF_TO = int(250 / _BIN_HZ)
+
 # Samples pulled from the pipe at a time. 60s keeps peak memory near 4 MB.
 _CHUNK_SAMPLES = SAMPLE_RATE * 60
 
@@ -49,6 +55,7 @@ class FrameFeatures:
     flux: np.ndarray
     hf_ratio: np.ndarray
     speech_energy: np.ndarray
+    low_energy: np.ndarray
     hop_seconds: float
 
     @property
@@ -102,6 +109,7 @@ def extract(audio_path: Path) -> FrameFeatures:
     flux_parts: list[np.ndarray] = []
     hf_parts: list[np.ndarray] = []
     speech_parts: list[np.ndarray] = []
+    low_parts: list[np.ndarray] = []
 
     previous_spectrum: np.ndarray | None = None
     carry = np.empty(0, dtype=np.float32)
@@ -149,6 +157,7 @@ def extract(audio_path: Path) -> FrameFeatures:
             safe_total = np.maximum(total, 1e-9)
             hf_parts.append(spectra[:, _HF_FROM:].sum(axis=1) / safe_total)
             speech_parts.append(spectra[:, _SPEECH_FROM:_SPEECH_TO].sum(axis=1))
+            low_parts.append(spectra[:, _LF_FROM:_LF_TO].sum(axis=1))
 
         stderr = process.stderr.read().decode("utf-8", "replace") if process.stderr else ""
         if process.wait() != 0:
@@ -163,21 +172,23 @@ def extract(audio_path: Path) -> FrameFeatures:
     flux = np.concatenate(flux_parts)
     hf_ratio = np.concatenate(hf_parts)
     speech_energy = np.concatenate(speech_parts)
+    low_energy = np.concatenate(low_parts)
 
-    # These three are combined element-wise downstream, so any drift between
-    # them surfaces hours later as an unreadable broadcast error. Caught here,
-    # where the cause is still obvious.
-    lengths = {len(flux), len(hf_ratio), len(speech_energy)}
+    # These are combined element-wise downstream, so any drift between them
+    # surfaces hours later as an unreadable broadcast error. Caught here, where
+    # the cause is still obvious.
+    lengths = {len(flux), len(hf_ratio), len(speech_energy), len(low_energy)}
     if len(lengths) != 1:
         raise FeatureExtractionFailed(
             "Feature arrays came out different lengths "
-            f"(flux {len(flux)}, hf {len(hf_ratio)}, speech {len(speech_energy)}) - "
-            "the chunk seam handling is wrong."
+            f"(flux {len(flux)}, hf {len(hf_ratio)}, speech {len(speech_energy)}, "
+            f"low {len(low_energy)}) - the chunk seam handling is wrong."
         )
 
     return FrameFeatures(
         flux=flux,
         hf_ratio=hf_ratio,
         speech_energy=speech_energy,
+        low_energy=low_energy,
         hop_seconds=HOP / SAMPLE_RATE,
     )
