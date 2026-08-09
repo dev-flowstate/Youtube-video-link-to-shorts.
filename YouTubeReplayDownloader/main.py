@@ -8,6 +8,7 @@ then run:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -50,10 +51,22 @@ MAX_CLIPS = 40
 # Set a number here to ignore the scaling and always take exactly that many.
 FIXED_CLIP_COUNT: int | None = None
 
-# Longest a clip may run, in seconds. Clips are trimmed around their peak, so
-# the best moment stays in frame. Short clips hold attention; 90s is about the
-# ceiling before viewers drop off.
-MAX_CLIP_SECONDS = 90.0
+# Longest a clip may run, in seconds. Shorter clips loop, and loops are reach,
+# so this is a ceiling rather than a target. Was 90s, which is long enough that
+# a viewer decides to leave before the point arrives.
+MAX_CLIP_SECONDS = 45.0
+
+# How much of that clip may be spent getting to the peak.
+#
+# The peak is the moment people replayed, so it is the hook, and the opening
+# seconds are the whole audition - in a Shorts feed there is no thumbnail, the
+# first frames are it. Clips used to be centred on the peak, which spent half
+# their length on the run-up.
+#
+# Not zero, though. A podcast payoff is a sentence, and opening exactly on it
+# lands mid-thought. This carries the setup, and boundary snapping widens it to
+# the start of that sentence.
+HOOK_LEAD_SECONDS = 10.0
 
 # What kind of video this is, which decides what evidence is trusted.
 #   "talk"    - podcasts and interviews. Most-replayed and chat only.
@@ -171,6 +184,33 @@ def _refine_with_speech(
     return refined
 
 
+def _mark_output_as_talk(output_dir: Path) -> None:
+    """Tell ClipCaptioner how much of each clip is padding rather than clip.
+
+    Every clip carries TAIL_PADDING_SECONDS of extra footage so the captioner
+    can reach past the cut to finish a sentence. It has no way to tell that
+    tail apart from the clip itself, so without this it treats the padded
+    length as the intended length and keeps nearly all of it - which is how a
+    45s clip becomes a 65s one.
+    """
+    marker = output_dir / "content.json"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps(
+                {
+                    "content_type": "talk",
+                    "tail_padding_seconds": TAIL_PADDING_SECONDS,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        # Only a hint for the next stage; never lose clips over it.
+        print(f"Could not write {marker.name}: {exc}")
+
+
 def _add_tail_padding(
     segments: list[ReplaySegment],
     video_duration_s: float,
@@ -252,6 +292,7 @@ def main() -> int:
         segments = detect_replay_segments(
             moments.points,
             max_segment_seconds=detect_budget,
+            lead_in_seconds=HOOK_LEAD_SECONDS,
         )
 
         if not segments:
@@ -286,6 +327,8 @@ def main() -> int:
             segments=segments,
             output_dir=output_dir,
         )
+
+        _mark_output_as_talk(output_dir)
 
         print("Download complete:\n")
         for path in saved_files:

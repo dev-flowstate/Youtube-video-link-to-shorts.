@@ -280,10 +280,23 @@ GEMINI_MIN_GROUNDING = 0.6
 END_ON_COMPLETE_THOUGHT = True
 
 # Bounds on where that sentence ending may be, in seconds from the clip's
-# start. Finishing the thought is worth going over the nominal 90s for, but
-# not by much - a clip that runs on defeats the format.
-THOUGHT_MIN_SECONDS = 35.0
-THOUGHT_MAX_SECONDS = 110.0
+# start. Finishing the thought is worth running a little past the target for,
+# but not by much - a clip that runs on defeats the format.
+#
+# The floor can only ever make a clip longer, so it is well below the target:
+# at 35s it was dragging short clips out to meet it, which is the opposite of
+# what it is for.
+THOUGHT_MIN_SECONDS = 20.0
+THOUGHT_MAX_SECONDS = 55.0
+
+# How much of each source clip is tail padding rather than clip.
+#
+# The downloader adds footage past its own cut so a sentence can be finished
+# beyond it, and content.json says how much. It matters because the end is
+# chosen relative to where the clip was *meant* to end: aim at the padded
+# length instead and the padding is kept, which turned every 45s clip into a
+# 65s one. Clips with no padding, like EsportsClipper's, leave this at zero.
+SOURCE_TAIL_PADDING_SECONDS = 0.0
 
 # ---------------------------------------------------------------------------
 # Splitting

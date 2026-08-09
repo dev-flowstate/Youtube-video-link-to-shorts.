@@ -11,6 +11,11 @@ from scipy.signal import find_peaks
 from replay_fetcher import HeatmapPoint
 
 
+# How long a clip may spend on the run-up before reaching its peak. Callers
+# that care set it explicitly; this is the fallback for those that do not.
+DEFAULT_LEAD_IN_S = 10.0
+
+
 @dataclass(frozen=True)
 class ReplaySegment:
     """A detected most-replayed clip window."""
@@ -132,19 +137,31 @@ def _trim_to_peak(
     end_s: float,
     peak_s: float,
     max_seconds: float,
+    lead_in_s: float = DEFAULT_LEAD_IN_S,
 ) -> tuple[float, float]:
-    """Shorten a segment to a budget, keeping the peak inside it.
+    """Shorten a segment to a budget, opening just before the peak.
 
-    The window is centred on the peak, then slid back inside the original
-    bounds if centring would push it past either edge. Sliding rather than
-    clipping means a peak near the start still gets a full-length clip.
+    Deliberately **not** centred. The peak is the moment people came back for,
+    and centring it spends the first half of the clip on the run-up - which is
+    the part a viewer scrolls past before the clip has made its case. On a 90s
+    clip that was 45 seconds of buildup before anything happened.
+
+    A short lead-in is kept rather than none: a podcast payoff is a sentence,
+    and opening exactly on it lands mid-thought. Ten seconds carries the setup
+    without burying the point, and boundary snapping widens it to the start of
+    that sentence afterwards.
+
+    The window is slid back inside the original bounds if the lead-in would
+    push it past either edge, so a peak near the start still gets a full clip.
     """
     if max_seconds <= 0 or (end_s - start_s) <= max_seconds:
         return start_s, end_s
 
-    half = max_seconds / 2.0
-    new_start = peak_s - half
-    new_end = peak_s + half
+    # Never give more than half the clip to the run-up, however it is set.
+    lead = max(0.0, min(lead_in_s, max_seconds / 2.0))
+
+    new_start = peak_s - lead
+    new_end = new_start + max_seconds
 
     if new_start < start_s:
         new_start = start_s
@@ -199,6 +216,7 @@ def detect_replay_segments(
     min_distance_buckets: int = 2,
     min_segment_seconds: float = 4.0,
     max_segment_seconds: float = 90.0,
+    lead_in_seconds: float = DEFAULT_LEAD_IN_S,
 ) -> list[ReplaySegment]:
     """
     Find all confident replay peaks and their start/end boundaries.
@@ -242,7 +260,9 @@ def detect_replay_segments(
             continue
 
         peak_s = float(centers[peak_index])
-        start_s, end_s = _trim_to_peak(start_s, end_s, peak_s, max_segment_seconds)
+        start_s, end_s = _trim_to_peak(
+            start_s, end_s, peak_s, max_segment_seconds, lead_in_seconds
+        )
 
         segments.append(
             ReplaySegment(
@@ -260,7 +280,11 @@ def detect_replay_segments(
     trimmed: list[ReplaySegment] = []
     for segment in segments:
         start_s, end_s = _trim_to_peak(
-            segment.start_s, segment.end_s, segment.peak_s, max_segment_seconds
+            segment.start_s,
+            segment.end_s,
+            segment.peak_s,
+            max_segment_seconds,
+            lead_in_seconds,
         )
         trimmed.append(
             ReplaySegment(

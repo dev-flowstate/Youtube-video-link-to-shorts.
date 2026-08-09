@@ -91,6 +91,13 @@ def apply_content_marker(input_dir: Path) -> str | None:
     if mode in ("crop", "fit"):
         config.CROP_MODE = mode
 
+    # The downloader leaves a tail on every clip so a sentence can be finished
+    # past the cut. Without knowing how long it is, that tail reads as part of
+    # the clip and nearly all of it gets kept.
+    padding = data.get("tail_padding_seconds")
+    if isinstance(padding, (int, float)) and padding >= 0:
+        config.SOURCE_TAIL_PADDING_SECONDS = float(padding)
+
     return data.get("content_type")
 
 
@@ -129,9 +136,20 @@ def render_clip(
 
     # Stop where the sentence does. Applied before splitting so the chosen end
     # is the clip's real end, and any trailing part-boundary follows from it.
-    # Capped at the footage available: the downloader leaves a tail to reach
-    # into, but there is nothing beyond the file itself.
-    usable_end = min(thought.choose_end(groups, duration), duration)
+    #
+    # Aimed at where the clip was meant to end, not at the end of the file. The
+    # last stretch is padding the downloader added purely so a sentence could
+    # be finished past the cut; aiming at the file end treats that padding as
+    # clip and keeps nearly all of it. Capped at the footage available, since
+    # there is nothing beyond the file itself.
+    # The floor covers a clip cut from the very end of a source, where there
+    # was not room for the full tail. Subtracting it whole there would eat real
+    # footage, so anything left implausibly short is treated as unpadded.
+    intended_end = duration - config.SOURCE_TAIL_PADDING_SECONDS
+    if intended_end < config.THOUGHT_MIN_SECONDS:
+        intended_end = duration
+
+    usable_end = min(thought.choose_end(groups, intended_end), duration)
 
     if duration - usable_end > 0.5:
         print(
