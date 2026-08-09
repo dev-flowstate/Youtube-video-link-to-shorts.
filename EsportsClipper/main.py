@@ -26,6 +26,7 @@ import config
 import downloader
 import fight_detector
 import speech
+import vision_detector
 from downloader import DownloadError, download_all_segments, fetch_video_title
 from ffmpeg_utils import FFmpegNotFoundError
 from moment_finder import fetch_video_facts
@@ -74,6 +75,56 @@ def _mark_output_as_gameplay(output_dir: Path) -> None:
         print(f"Could not write {marker.name}: {exc}")
 
 
+def _find_fights_by_watching(source_video: Path) -> list:
+    """Look at the broadcast and keep the moments that show combat."""
+    labelled = vision_detector.detect(source_video)
+
+    seen: dict[str, int] = {}
+    for item in labelled:
+        seen[item.label] = seen.get(item.label, 0) + 1
+    summary = ", ".join(f"{count} {label.lower()}" for label, count in sorted(seen.items()))
+    print(f"    saw {summary}")
+
+    spans = vision_detector.fight_windows(labelled)
+    return clip_windows.windows_from_vision(spans, config.VISION_SAMPLE_SECONDS)
+
+
+def _find_fights_by_listening(canonical_url: str, is_live: bool, duration_s: float) -> list:
+    """Fall back to the audio detector.
+
+    Kept for when there is no API key, but it is much the weaker of the two: on
+    a real broadcast the game is mixed so far under the casters that studio
+    segments scored higher on gunfire than the actual fights did.
+    """
+    print("Fetching audio and looking for fights...")
+    with tempfile.TemporaryDirectory(prefix="esports_") as tmp:
+        audio_path = speech.download_audio(canonical_url, Path(tmp), is_live)
+        features = audio_features.extract(audio_path)
+
+    measured = features.duration_s
+    if measured > 0:
+        duration_s = measured
+    print(f"Analysed {duration_s / 60:.0f} min of audio.")
+
+    curves = fight_detector.build_curves(features, duration_s)
+    active = int((curves.gunfire >= config.MIN_GUNFIRE_ONSETS).sum())
+    print(f"Gunfire in {active} of {len(curves.gunfire)} buckets.")
+
+    # Peaks only - the spans it returns are centred, which is wrong here, so
+    # clip_windows rebuilds every one of them around the gunfire.
+    min_gap = clip_windows._buckets(config.MAX_CLIP_SECONDS, curves.width_s)
+    peaks = detect_replay_segments(
+        fight_detector.to_points(curves),
+        min_distance_buckets=min_gap,
+        min_segment_seconds=config.BUCKET_SECONDS,
+        max_segment_seconds=config.MAX_CLIP_SECONDS,
+    )
+    if not peaks:
+        return []
+
+    return clip_windows.windows_from_segments(curves, peaks)
+
+
 def _print_fights(segments) -> None:
     print(f"\nFound {len(segments)} fight(s):\n")
     for index, segment in enumerate(segments, start=1):
@@ -105,37 +156,35 @@ def main() -> int:
                 "  running stream takes a while before anything is analysed."
             )
 
-        print("Fetching audio and looking for fights...")
-        with tempfile.TemporaryDirectory(prefix="esports_") as tmp:
-            audio_path = speech.download_audio(canonical_url, Path(tmp), is_live)
-            features = audio_features.extract(audio_path)
+        title = fetch_video_title(canonical_url)
+        print(f"Broadcast: {title}\n")
 
-        measured = features.duration_s
-        if measured > 0:
-            duration_s = measured
-        print(f"Analysed {duration_s / 60:.0f} min of audio.")
+        watching = config.USE_VISION and vision_detector.available()
+        if watching:
+            # Before the download, not after: the source is the expensive part
+            # and there is no point fetching it to find the key is spent.
+            vision_detector.check_ready()
 
-        curves = fight_detector.build_curves(features, duration_s)
-        active = int((curves.gunfire >= config.MIN_GUNFIRE_ONSETS).sum())
-        print(f"Gunfire in {active} of {len(curves.gunfire)} buckets.")
+            # Watching needs the file before it can choose anything, so the
+            # download comes first. It is cached, so cutting reuses it rather
+            # than fetching the broadcast twice.
+            print("Downloading the source once...")
+            source_video = downloader.fetch_source_video(canonical_url, output_dir)
+            print(f"Source ready: {source_video.name}\n")
 
-        # Peaks only - the spans it returns are centred, which is wrong here,
-        # so clip_windows rebuilds every one of them around the gunfire.
-        min_gap = clip_windows._buckets(config.MAX_CLIP_SECONDS, curves.width_s)
-        peaks = detect_replay_segments(
-            fight_detector.to_points(curves),
-            min_distance_buckets=min_gap,
-            min_segment_seconds=config.BUCKET_SECONDS,
-            max_segment_seconds=config.MAX_CLIP_SECONDS,
-        )
+            print("Watching the broadcast for fights...")
+            segments = _find_fights_by_watching(source_video)
+        else:
+            if config.USE_VISION:
+                print(
+                    "Watching is switched on but unavailable "
+                    f"({vision_detector.ENV_KEY} unset, or google-genai missing).\n"
+                    "  Falling back to audio, which picks up far more studio talk.\n"
+                )
+            segments = _find_fights_by_listening(canonical_url, is_live, duration_s)
 
-        if not peaks:
-            print("No fights were detected in this broadcast.")
-            return 0
-
-        segments = clip_windows.windows_from_segments(curves, peaks)
         if not segments:
-            print("Every candidate was too brief to be a fight.")
+            print("No fights were detected in this broadcast.")
             return 0
 
         budget = clip_windows.clip_budget(duration_s)
@@ -144,10 +193,7 @@ def main() -> int:
         segments = clip_windows.pick_best(segments, budget)
 
         _print_fights(segments)
-
-        title = fetch_video_title(canonical_url)
-        print(f"Broadcast: {title}\n")
-        print("Downloading the source once, then cutting every fight locally.")
+        print("Cutting every fight from the source.")
 
         saved = download_all_segments(
             youtube_url=canonical_url,
@@ -179,12 +225,21 @@ def main() -> int:
     except audio_features.FeatureExtractionFailed as exc:
         print(f"Could not analyse the audio: {exc}")
         return 1
+    except vision_detector.VisionUnavailable as exc:
+        print(f"Could not watch the broadcast: {exc}")
+        return 1
     except DownloadError as exc:
         print(f"Download failed: {exc}")
         return 1
     except KeyboardInterrupt:
         print("\nInterrupted.")
         return 130
+    finally:
+        # The source is downloaded before detection now, so every early return
+        # above would otherwise leave a multi-gigabyte file in the output
+        # folder. Cutting already cleans up after itself, so this is a no-op on
+        # the path that reaches it.
+        downloader.cleanup_cached_videos()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,47 @@ because the casters never stop talking.
 
 ## How a fight is found
 
+**It watches the broadcast.** Frames are sampled roughly every 10 seconds and
+each one is labelled `FIGHT`, `GAME` or `STUDIO`. Runs of `FIGHT` frames become
+clips; everything else is thrown away.
+
+That is the whole idea, and it exists because the obvious approach does not
+work. See below.
+
+Frames come from **keyframes only**, which costs almost nothing to decode — the
+encoder already made them independent — and has a useful side effect: a
+broadcast puts a keyframe at every scene cut, which is exactly where it switches
+between the game and the desk. They are tiled nine to an image, so one request
+covers a minute and a half of broadcast.
+
+### Why not audio
+
+The first version listened for gunfire. It was measured against two fights
+identified by hand in a real EWC broadcast, and it does not work:
+
+| | Real fights | Wrongly-picked studio segments |
+|---|---|---|
+| Gunfire onsets/sec | 0.43 | **1.03** |
+| HF ratio (mean) | 0.15 | 0.17 |
+| Frames above HF threshold | 2.4–4.2% | 5.1–8.1% |
+
+The signal is not weak, it is **inverted** — interviews scored 2.4× higher on
+"gunfire" than the actual firefights. Four more features were tried
+(low-frequency energy, spectral flatness, crest factor, low-frequency
+transients) and all came out flat, within 6% between the two classes.
+
+The cause is the mix: game audio sits so far under the casters that gunfire
+never meaningfully reaches the broadcast. No threshold fixes an absent signal.
+
+Measured on the same footage, watching gets it right. Of 51 clips the audio
+detector produced, **88% were not gameplay at all** — presenters, interviews,
+ranking boards, adverts.
+
+The audio path is kept as a fallback for when there is no API key, and the rest
+of this section describes it.
+
+### The audio fallback
+
 Two audio signals with **different timing**, which is the crux of it:
 
 | Signal | Timing | Meaning |
@@ -66,6 +107,9 @@ strongest fights are exactly what must stay rankable.
 
 - Python 3.11+, FFmpeg on PATH
 - `py -m pip install -r requirements.txt`
+- **`GEMINI_API_KEY` set in the environment.** Without it the run falls back to
+  the audio detector, and says so. The key is read from the environment only —
+  it is never stored in this repo.
 - **`YouTubeReplayDownloader/` must sit beside this folder** — its URL parsing,
   audio fetching, peak detection and clip cutting are reused rather than
   duplicated. `shared.py` is the one place that path is wired up.
@@ -96,6 +140,10 @@ All in `config.py`.
 
 | Setting | Purpose |
 |---|---|
+| `USE_VISION` | Watch the broadcast instead of listening. Off = audio fallback. |
+| `VISION_SAMPLE_SECONDS` | How often to look. Lower catches shorter fights and costs proportionally more requests. |
+| `VISION_REQUESTS_PER_MINUTE` | Held under the key's quota. **The main thing setting how long a broadcast takes to watch.** Raise it on a paid tier. |
+| `VISION_BRIDGE_SECONDS` | Fight frames closer than this are one engagement |
 | `MIN/MAX_CLIP_SECONDS` | 15–45s. Anything shorter is an incidental pot-shot. |
 | `MIN/MAX_PRE_ROLL_SECONDS` | Bounds on how far back the clip may reach |
 | `POST_ROLL_SECONDS` | Kept after the peak for the caster's reaction |
@@ -115,23 +163,35 @@ between fights is never in it, which is the point.
 
 ## Cost
 
-- Analysis: **~0.7 min CPU for 5.5h** of audio, ~4 MB peak. Audio is streamed
-  in chunks, never loaded whole (5.5h is ~1.3 GB as float32).
-- The **source download dominates**: 10–12 GB at 1080p for a 5.5h broadcast.
-  Partial downloads are not possible — YouTube stalls FFmpeg's HTTP client,
-  which is what they depend on.
+- **Nothing heavy runs locally.** The model is remote; this machine only decodes
+  keyframes and tiles them, which is a few minutes for a 5.5h broadcast and
+  needs no GPU.
+- **Requests**: ~2000 sampled frames over 5.5h, nine to an image, so ~220. The
+  run prints the exact number before it starts.
+- **Watch the daily quota.** Free-tier limits are per model and per day, and
+  they are small — `gemini-3-flash-preview` allows **20 a day**, which is why
+  it is not the model used here despite scoring just as well. If a run stops
+  early saying the key is spent, either enable billing or raise
+  `VISION_SAMPLE_SECONDS` to look less often. The key is checked before the
+  download, so a spent key costs seconds rather than an hour.
+- The **source download still dominates**: 10–12 GB at 1080p for a 5.5h
+  broadcast. Partial downloads are not possible — YouTube stalls FFmpeg's HTTP
+  client, which is what they depend on.
+- The download now happens **before** detection, because you cannot watch a
+  video you have not got. It is cached, so cutting reuses the same file.
 
 ## Limitations
 
-- **Audio only.** A quiet sniper pick with no reaction is missed. Kill-feed OCR
-  would be the strongest signal but needs Tesseract and breaks whenever the
-  broadcast overlay changes.
-- **Replays duplicate kills.** Broadcasts replay big moments with gunfire *and*
-  fresh commentary, so the same kill can be clipped twice at different
-  timestamps. Overlap rejection cannot catch this.
-- **Watchparty vs official feed.** A watchparty puts a streamer's mic over the
-  game audio, so gunfire is quieter relative to voice. Thresholds tuned on one
-  may need adjusting for the other.
-- **Thresholds are not yet calibrated against real broadcast audio.** The
-  scoring is verified on synthetic signals; `HF_RATIO_MIN` and
-  `ONSET_FLUX_FACTOR` are the two that real footage is most likely to move.
+- **A fight between sampled frames is missed.** At 10s spacing a brief exchange
+  can fall in a gap. Lowering `VISION_SAMPLE_SECONDS` fixes it and costs
+  proportionally more requests.
+- **The label is one frame's worth of judgement.** A frame mid-fight where
+  nobody happens to be shooting reads as `GAME`; `VISION_BRIDGE_SECONDS` is what
+  stops that splitting one engagement into two clips.
+- **Replays duplicate kills.** Broadcasts replay big moments, and a replay looks
+  exactly like a fight because it is one. The same kill can be clipped twice.
+- **Requests cost quota.** A key that runs out mid-broadcast leaves frames
+  unlabelled; above `VISION_MAX_UNLABELLED` the run refuses rather than
+  reporting a broadcast with no fights in it.
+- **The audio fallback is much weaker** — see the measurements above. It is
+  there so a missing key does not stop the run, not because it works well.

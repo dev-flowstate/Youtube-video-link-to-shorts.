@@ -94,7 +94,61 @@ MIN_GUNFIRE_ONSETS = 4.0
 NORMALISE_PERCENTILE = 95.0
 
 # ---------------------------------------------------------------------------
-# Gunfire detection
+# Vision detection
+# ---------------------------------------------------------------------------
+
+# Look at the video rather than listen to it. Audio detection was measured
+# against known fights on a real broadcast and does not work: the game is mixed
+# so far under the casters that studio segments scored 2.4x *higher* on gunfire
+# onsets than the fights did, and five separate features came out flat between
+# the two. What is obvious on screen is simply not in the waveform.
+#
+# Needs GEMINI_API_KEY and google-genai. Falls back to audio when unavailable.
+USE_VISION = True
+
+# Measured against frames from a real broadcast, labelled by hand: 17 of 18
+# correct, and 12 of 12 studio frames correctly kept out - which is the whole
+# complaint about the audio detector. Its one error was calling a quiet
+# gameplay frame a fight, which costs a dull clip rather than an interview.
+#
+# Pinned rather than an alias like "gemini-flash-lite-latest", so the behaviour
+# does not change under you. gemini-3-flash-preview scored the same but its
+# free tier allows twenty requests a day, and a broadcast needs a hundred-odd.
+VISION_MODEL = "gemini-3.1-flash-lite"
+
+# Roughly one sampled frame per this many seconds. Frames come from keyframes,
+# which cost almost nothing to decode and land on the broadcast's own scene
+# cuts - exactly where it switches between the game and the desk.
+VISION_SAMPLE_SECONDS = 10.0
+
+# Frames are tiled into a grid so one call covers many moments. A 3x3 grid cuts
+# the number of calls by nine.
+VISION_FRAME_WIDTH = 320
+VISION_GRID_COLUMNS = 3
+VISION_GRID_ROWS = 3
+
+# Fight frames closer together than this belong to one engagement. Wide enough
+# that a single mislabelled frame mid-fight does not split it in two.
+VISION_BRIDGE_SECONDS = 25.0
+
+# A free key allows only a handful of requests a minute. Staying under the
+# ceiling is faster than sprinting into it and backing off, and much quieter.
+# Raise it if the key is on a paid tier - it is the main thing setting how long
+# a broadcast takes to watch.
+VISION_REQUESTS_PER_MINUTE = 10.0
+
+# The quota comes back on its own, so waiting is the right response. Giving up
+# would leave a stretch of the broadcast unlabelled, and unlabelled reads as
+# "no fight here".
+VISION_MAX_RETRIES = 4
+VISION_RETRY_SECONDS = 20.0
+
+# Refuse to report on a broadcast this badly labelled. Without it, a run where
+# most calls failed would quietly claim there were no fights.
+VISION_MAX_UNLABELLED = 0.25
+
+# ---------------------------------------------------------------------------
+# Gunfire detection (audio fallback only - see USE_VISION)
 # ---------------------------------------------------------------------------
 
 # Energy above 4 kHz as a fraction of the total. Gunshots are broadband; voice

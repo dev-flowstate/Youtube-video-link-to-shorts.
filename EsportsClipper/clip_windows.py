@@ -84,6 +84,51 @@ def windows_from_segments(
     return built
 
 
+def windows_from_vision(
+    spans: list[tuple[float, float]],
+    sample_s: float,
+) -> list[ReplaySegment]:
+    """Shape each run of on-screen combat into a clip.
+
+    Vision gives the fight directly, so there is no walking backwards along a
+    gunfire curve here - the span already is the engagement. What it does not
+    give is precision: a sampled frame stands for the whole interval around it,
+    so the span is widened by one sampling gap at the front. Without that, a
+    fight caught by a single frame would have no length at all, and every clip
+    would open a beat after the shooting started.
+    """
+    built: list[ReplaySegment] = []
+
+    for span_start, span_end in spans:
+        start_s = max(0.0, span_start - sample_s)
+        end_s = span_end + sample_s / 2 + config.POST_ROLL_SECONDS
+
+        # A lone fight frame is still a real detection - combat was on screen at
+        # that instant - so short spans are padded out rather than discarded.
+        if end_s - start_s < config.MIN_CLIP_SECONDS:
+            start_s = max(0.0, end_s - config.MIN_CLIP_SECONDS)
+
+        # Trim the front rather than the payoff: a long engagement resolves at
+        # the end, and that is the part worth watching.
+        if end_s - start_s > config.MAX_CLIP_SECONDS:
+            start_s = end_s - config.MAX_CLIP_SECONDS
+
+        # Sustained combat outranks a passing exchange.
+        frames = (span_end - span_start) / sample_s + 1
+
+        built.append(
+            ReplaySegment(
+                start_s=start_s,
+                end_s=end_s,
+                peak_s=span_end,
+                peak_score=frames,
+                prominence=frames,
+            )
+        )
+
+    return built
+
+
 def pick_best(segments: list[ReplaySegment], limit: int) -> list[ReplaySegment]:
     """Strongest fights first, skipping any that overlap one already taken."""
     chosen: list[ReplaySegment] = []

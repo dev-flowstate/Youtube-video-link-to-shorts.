@@ -3,6 +3,9 @@ numpy>=2.0.0
 scipy>=1.15.0
 requests>=2.32.0
 tqdm>=4.67.0
+# Watching the broadcast. Without it (or without GEMINI_API_KEY) the run falls
+# back to the audio detector, which finds far more studio talk than fights.
+google-genai>=1.0.0
 # Reached indirectly: the sibling's ffmpeg_utils imports it inside a function
 # as a last-resort way to find an FFmpeg binary, so a module-level import
 # check never sees it.

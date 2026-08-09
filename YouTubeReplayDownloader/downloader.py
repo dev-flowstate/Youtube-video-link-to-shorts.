@@ -102,6 +102,17 @@ def _download_full_video(youtube_url: str, work_dir: Path) -> Path:
     return produced
 
 
+def fetch_source_video(youtube_url: str, work_dir: Path) -> Path:
+    """Download the source now, before the clips have been chosen.
+
+    Detection that watches the video rather than listening to it needs the file
+    in hand before it can say which moments are worth keeping. The download is
+    cached by URL, so cutting afterwards reuses this exact file instead of
+    fetching the broadcast a second time.
+    """
+    return _download_full_video(youtube_url, work_dir)
+
+
 def _ffmpeg_cut(source_video: Path, segment: ReplaySegment, output_path: Path) -> None:
     ensure_ffmpeg_available()
 
