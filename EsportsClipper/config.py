@@ -103,8 +103,17 @@ NORMALISE_PERCENTILE = 95.0
 # onsets than the fights did, and five separate features came out flat between
 # the two. What is obvious on screen is simply not in the waveform.
 #
-# Needs GEMINI_API_KEY and google-genai. Falls back to audio when unavailable.
+# Needs GEMINI_API_KEY and google-genai. See ALLOW_AUDIO_FALLBACK below for
+# what happens when either is missing.
 USE_VISION = True
+
+# The audio path above is a documented negative result, not a spare detector:
+# on the same broadcast, studio talk scored 2.4x *higher* on gunfire than the
+# actual fights did, so it is wrong in the direction that matters. It stays in
+# the tree on purpose, reachable only by deliberately setting this to True - a
+# missing key should stop the run, not quietly swap in a detector that prefers
+# interviews.
+ALLOW_AUDIO_FALLBACK = False
 
 # Measured against frames from a real broadcast, labelled by hand: 17 of 18
 # correct, and 12 of 12 studio frames correctly kept out - which is the whole

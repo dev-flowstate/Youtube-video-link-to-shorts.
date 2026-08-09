@@ -46,10 +46,19 @@ Measured on the same footage, watching gets it right. Of 51 clips the audio
 detector produced, **88% were not gameplay at all** — presenters, interviews,
 ranking boards, adverts.
 
-The audio path is kept as a fallback for when there is no API key, and the rest
-of this section describes it.
+The audio path is **not** a fallback. It is a recorded negative result, kept in
+the tree so the measurement is not lost, and reachable only by deliberately
+setting `ALLOW_AUDIO_FALLBACK = True`.
 
-### The audio fallback
+It used to run automatically whenever the API key was missing, and that caused
+a real failure: a terminal inherits its environment from when its parent window
+opened, so a VS Code window opened before the key was saved could not see it —
+the run silently switched to the inverted detector and produced a full set of
+interview clips. A missing key now stops the run and explains itself.
+
+The rest of this section describes that audio path.
+
+### The audio path (off by default)
 
 Two audio signals with **different timing**, which is the crux of it:
 
@@ -140,7 +149,8 @@ All in `config.py`.
 
 | Setting | Purpose |
 |---|---|
-| `USE_VISION` | Watch the broadcast instead of listening. Off = audio fallback. |
+| `USE_VISION` | Watch the broadcast instead of listening. |
+| `ALLOW_AUDIO_FALLBACK` | Off. Lets the known-bad audio detector run when watching is unavailable, instead of stopping. |
 | `VISION_SAMPLE_SECONDS` | How often to look. Lower catches shorter fights and costs proportionally more requests. |
 | `VISION_REQUESTS_PER_MINUTE` | Held under the key's quota. **The main thing setting how long a broadcast takes to watch.** Raise it on a paid tier. |
 | `VISION_BRIDGE_SECONDS` | Fight frames closer than this are one engagement |
@@ -193,5 +203,6 @@ between fights is never in it, which is the point.
 - **Requests cost quota.** A key that runs out mid-broadcast leaves frames
   unlabelled; above `VISION_MAX_UNLABELLED` the run refuses rather than
   reporting a broadcast with no fights in it.
-- **The audio fallback is much weaker** — see the measurements above. It is
-  there so a missing key does not stop the run, not because it works well.
+- **The audio path is wrong, not merely weak** — see the measurements above. It
+  is off by default and a missing key stops the run instead, because producing
+  fifty interview clips is worse than producing none.

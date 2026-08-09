@@ -172,15 +172,37 @@ def main() -> int:
             source_video = downloader.fetch_source_video(canonical_url, output_dir)
             print(f"Source ready: {source_video.name}\n")
 
-            print("Watching the broadcast for fights...")
+            print(f"Detector: watching the video ({config.VISION_MODEL})")
             segments = _find_fights_by_watching(source_video)
         else:
+            if config.USE_VISION and not config.ALLOW_AUDIO_FALLBACK:
+                # A missing key must stop the run rather than quietly falling
+                # through to a detector that is measured to prefer studio talk
+                # over real fights (see config.ALLOW_AUDIO_FALLBACK).
+                print(
+                    "Watching is switched on but unavailable "
+                    f"({vision_detector.ENV_KEY} unset, or google-genai missing).\n"
+                    "\n"
+                    "  Most likely cause: the key is saved in the Windows environment,\n"
+                    "  but a terminal inherits its environment from when its parent\n"
+                    "  window opened - a VS Code window opened before the key was\n"
+                    "  saved cannot see it. Restart VS Code and try again.\n"
+                    "\n"
+                    "  If the key is set, check that google-genai is installed.\n"
+                    "\n"
+                    "  The audio detector is a measured negative result, not a\n"
+                    "  fallback, so it stays off by default. Set\n"
+                    "  ALLOW_AUDIO_FALLBACK = True in config.py to run it anyway.\n"
+                )
+                return 1
             if config.USE_VISION:
                 print(
                     "Watching is switched on but unavailable "
                     f"({vision_detector.ENV_KEY} unset, or google-genai missing).\n"
-                    "  Falling back to audio, which picks up far more studio talk.\n"
+                    "  Falling back to audio anyway (ALLOW_AUDIO_FALLBACK is on): this\n"
+                    "  detector is known to pick studio talk over real fights.\n"
                 )
+            print("Detector: listening to audio (known-bad, ALLOW_AUDIO_FALLBACK is on)")
             segments = _find_fights_by_listening(canonical_url, is_live, duration_s)
 
         if not segments:
