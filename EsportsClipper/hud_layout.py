@@ -60,11 +60,30 @@ TEAM_ROSTER = Region(0.021, 0.093, 0.145, 0.239)
 # The four-team bar across the top. Each slot carries a rank badge, a logo, a
 # name and one tick per living player. Tick colour matters: green for the teams
 # currently in frame, red for a knocked player, grey for teams elsewhere.
-TEAM_BAR = Region(0.203, 0.000, 0.844, 0.042)
+#
+# The right edge was measured at 0.844 off a single frame, which put the slot
+# pitch about 3 px wide at 960 and let the error accumulate - by the fourth
+# slot the computed tick zone had walked clean past the actual ticks. Pulled in
+# after checking the pitch across all four slots.
+TEAM_BAR = Region(0.203, 0.000, 0.830, 0.042)
 TEAM_BAR_SLOTS = 4
 
-# Within one slot, the ticks sit at the right-hand end.
-TEAM_SLOT_TICKS = (0.72, 1.00)
+# Within one slot, the ticks sit towards the right-hand end. Widened from an
+# initial (0.72, 1.00) for the same reason: measured against a real bar the
+# ticks occupy roughly the middle-right of a slot, not its last quarter.
+TEAM_SLOT_TICKS = (0.55, 0.95)
+
+# This production does not always show the bar. It alternates between the bar
+# and a right-hand standings table carrying the same alive information, so the
+# team-bar region is empty for roughly half of a match. That is why gameplay
+# presence is decided across three regions rather than this one: any single
+# region can be absent for minutes at a time without meaning the game is off.
+#
+# Ticks are slanted slashes, so at 960 wide their x-projections overlap and
+# connected components merge and fragment. Measured against a hand-read bar the
+# green/grey split came out wrong while the total was close (17 against 16), so
+# the total is worth using and the colour breakdown is not.
+TEAM_BAR_INTERMITTENT = True
 
 # Minimap, top right.
 MINIMAP = Region(0.877, 0.004, 0.979, 0.139)
@@ -89,12 +108,24 @@ BOTTOM_CARD = Region(0.305, 0.792, 0.789, 1.000)
 #
 # Raw pixel change is the wrong measure for this strip, because it is mostly
 # live footage and the camera moves. What identifies a notice is the banner
-# itself - a crisp dark box holding bright text - which camera motion does not
-# produce.
-KILLFEED_STRIP = Region(0.000, 0.278, 0.195, 0.556)
+# itself - a box holding bright text - which camera motion does not produce.
+#
+# Two corrections after testing against real notices. The plate is translucent
+# rather than black, so over a bright ground it reads around 150 and a
+# dark-pixel test misses it entirely; what holds is "mostly dark rows carrying
+# a minority of bright glyphs". And the bottom edge was clipping the top of the
+# picture-in-picture monitor in some frames, which added ink that was not a
+# notice, so it is raised.
+KILLFEED_STRIP = Region(0.000, 0.278, 0.195, 0.520)
 
 # Floating damage numbers appear around the centre, near whoever the camera is
 # following. Direct evidence of a hit landing.
+#
+# This region is broad, and a plain bright-blob count inside it also catches
+# player nametags and zone warnings - it scored 21 blobs on a frame holding no
+# damage numbers at all. What it measures is honestly "small bright words on a
+# dark plate near the middle of the screen", which correlates with a fight
+# without being only damage numbers.
 DAMAGE_ZONE = Region(0.300, 0.150, 0.750, 0.550)
 
 # The standings table that covers the right of the screen during analysis. Its

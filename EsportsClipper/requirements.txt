@@ -1,11 +1,20 @@
 yt-dlp>=2026.1.1
 numpy>=2.0.0
 scipy>=1.15.0
+# Every per-frame vision feature. frame_features.py leans on it for colour
+# conversion, histograms, Canny and connected components, all of which have to
+# run 40,000 times per broadcast and are far too slow in pure numpy.
+opencv-python>=4.10.0
 requests>=2.32.0
 tqdm>=4.67.0
-# Watching the broadcast. Without it (or without GEMINI_API_KEY) the run falls
-# back to the audio detector, which finds far more studio talk than fights.
+# Watching the broadcast, and labelling the frames the local model trains on.
+# Without it (or without GEMINI_API_KEY) the run stops rather than falling
+# through to the audio detector, which prefers studio talk to fights.
 google-genai>=1.0.0
+# The classifier behind the local detector. HistGradientBoostingClassifier
+# handles NaN natively, which matters because a missing HUD reading has to stay
+# missing - imputing a kill-notice count with the column mean invents a fight.
+scikit-learn>=1.9.0
 # Reached indirectly: the sibling's ffmpeg_utils imports it inside a function
 # as a last-resort way to find an FFmpeg binary, so a module-level import
 # check never sees it.
