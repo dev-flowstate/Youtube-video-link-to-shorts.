@@ -1,2 +1,5 @@
 faster-whisper>=1.2.1
 opencv-python>=4.10
+# Optional: lets Gemini write clip titles instead of the built-in heuristic.
+# Needs GEMINI_API_KEY in the environment; without it the heuristic is used.
+google-genai>=1.0.0

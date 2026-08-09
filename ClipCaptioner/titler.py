@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 import config
+import gemini_titler
 from models import Word, join_word_texts
 
 # Words that mark a claim worth clicking on. Curated rather than learned:
@@ -285,9 +286,18 @@ def build_description(title: str, words: list[Word], source_name: str) -> str:
 
 
 def make_title(words: list[Word], fallback: str, language: str | None = None) -> str:
-    """Choose the most title-worthy line the clip actually contains."""
+    """Title the clip, preferring Gemini and falling back to its own words.
+
+    Gemini can say what a moment is about; the heuristic below can only quote
+    it. But the heuristic can never invent, so it stays as the fallback for
+    when Gemini is unavailable or returns something the clip does not support.
+    """
     if not words:
         return fallback
+
+    generated = gemini_titler.make_title(join_word_texts([w.text for w in words]))
+    if generated:
+        return generated
 
     sentences = [s for s in build_sentences(words) if s.text.strip()]
     if not sentences:

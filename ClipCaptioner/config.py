@@ -237,6 +237,22 @@ WRITE_UPLOAD_NOTES = False
 # much before truncating.
 TITLE_MAX_CHARS = 70
 
+# Write the title with Gemini instead of picking the best existing sentence.
+# The heuristic can only choose a line the clip already contains, which is
+# honest but blunt - it cannot say what a moment is *about*, only quote it.
+#
+# Needs GEMINI_API_KEY in the environment and `py -m pip install google-genai`.
+# With either missing, or if the call fails, the heuristic runs instead, so
+# this is safe to leave on.
+USE_GEMINI_TITLES = True
+GEMINI_MODEL = "gemini-3-flash-preview"
+
+# A generated title is rejected unless this share of its meaningful words also
+# appear in the transcript. The heuristic physically cannot invent anything; a
+# model can, so it has to earn the same guarantee rather than be trusted with
+# it.
+GEMINI_MIN_GROUNDING = 0.6
+
 # ---------------------------------------------------------------------------
 # Ending on a complete thought
 # ---------------------------------------------------------------------------

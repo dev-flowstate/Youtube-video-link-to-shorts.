@@ -153,6 +153,26 @@ removed, a question mark kept, and anything over `TITLE_MAX_CHARS` truncated
 on a word boundary. If nothing scores well enough the clip's filename is used
 instead.
 
+### Letting Gemini write it instead
+
+The heuristic can only quote the clip, never say what it is *about*. With
+`GEMINI_API_KEY` set and `google-genai` installed, Gemini writes the title and
+the heuristic becomes the fallback.
+
+```powershell
+py -m pip install google-genai
+setx GEMINI_API_KEY "your-key"
+```
+
+A generated title is **checked back against the transcript** before it is
+accepted: at least `GEMINI_MIN_GROUNDING` of its meaningful words must actually
+appear in what was said. The heuristic physically cannot invent anything, so a
+model has to earn the same guarantee rather than be trusted with it — a title
+about something the clip never mentions scores 0% and is thrown away.
+
+Everything degrades quietly. No key, no package, an API error, or a title that
+fails grounding, and the heuristic runs exactly as before.
+
 Because the title is always a line the clip actually contains, it can never
 describe something that was not said — which also means it is only as good as
 the transcription. If names come out wrong, fill in `WHISPER_VOCABULARY`.
