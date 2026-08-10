@@ -174,6 +174,20 @@ GRID_SECONDS = 0.5
 # moment is a caster louder than he has just been.
 SPEECH_Z_WINDOW_SECONDS = 60.0
 
+# A clip needs this many positive half-seconds inside the window below before
+# it opens. One frame is never enough: a lens flare, a bright transition or a
+# confusing graphic can clear a threshold, and none of them can stay cleared
+# for three seconds running, while a real engagement produces dozens in a row.
+# This is the cheapest precision available - it costs almost no recall.
+VOTE_MIN_HITS = 3
+VOTE_WINDOW_SECONDS = 3.0
+
+# Fight rows closer together than this belong to one engagement. Shorter than
+# the Gemini path's 25s because this samples twenty times as often, so a real
+# gap of a few seconds is now something it can actually see rather than an
+# artefact of looking once every ten.
+LOCAL_BRIDGE_SECONDS = 10.0
+
 # Speech quieter than this fraction of the broadcast's own typical level counts
 # as a drop in the mix. Relative, because feeds differ in level.
 SILENCE_FRACTION = 0.25
