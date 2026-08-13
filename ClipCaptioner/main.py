@@ -85,6 +85,17 @@ def _ask_about_layout() -> str:
 
 
 def main() -> int:
+    # YouTube titles carry emoji, and clip filenames are built from them. When
+    # this runs in a console Windows copes; the moment its output is piped to a
+    # file or another program, stdout falls back to the ANSI codepage and the
+    # first emoji filename raises UnicodeEncodeError mid-run. The clips already
+    # rendered survive, the rest never happen, and the traceback points at a
+    # print statement rather than at anything real.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
     args = _parse_args()
 
     if args.language:
