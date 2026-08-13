@@ -24,6 +24,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, default=config.INPUT_DIR, help="Folder of source clips.")
     parser.add_argument("--output", type=Path, default=config.OUTPUT_DIR, help="Folder for rendered clips.")
     parser.add_argument("--only", type=str, default=None, help="Only process clips whose name contains this text.")
+    parser.add_argument("--layout", choices=("crop", "fit", "stacked"), default=None,
+                        help="How 16:9 becomes 9:16. Skips the prompt.")
 
     captions = parser.add_mutually_exclusive_group()
     captions.add_argument("--captions", dest="captions", action="store_true", default=None,
@@ -58,6 +60,30 @@ def _ask_about_captions() -> bool:
     return answer not in {"n", "no"}
 
 
+def _ask_about_layout() -> str:
+    """Ask how the 16:9 source should become a 9:16 Short.
+
+    Worth asking rather than defaulting, because the default is destructive and
+    silently so. A 9:16 slice keeps 31.6% of the width, so cropping discards
+    two thirds of the picture. On a talking head that is empty room either
+    side. On a stream it is the game the reaction is about, and the finished
+    Short shows a face reacting to something the viewer cannot see.
+    """
+    print("\nWhat kind of clips are these?")
+    print("  [1] Podcast or interview  - crop to the speaker")
+    print("  [2] Streamer or reaction  - camera on top, the screen below")
+    print("  [3] Gameplay or esports   - fit the whole frame, nothing cut")
+
+    try:
+        answer = input("Choose [1]: ").strip() or "1"
+    except EOFError:
+        # Piped or scheduled run. The safe default is the one that cannot throw
+        # anything away, not the one that happens to be first.
+        return "fit"
+
+    return {"2": "stacked", "3": "fit"}.get(answer, "crop")
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -67,6 +93,19 @@ def main() -> int:
 
     # Whatever produced these clips may have left a note about what they are.
     content_type = pipeline.apply_content_marker(args.input)
+
+    # Order of authority: an explicit flag, then the marker, then ask. Clips
+    # added by hand carry no marker, and those are exactly the ones where a
+    # silent default has been throwing two thirds of the frame away.
+    if args.layout is not None:
+        config.CROP_MODE = args.layout
+    elif content_type is None:
+        config.CROP_MODE = _ask_about_layout()
+
+    if config.CROP_MODE == "stacked":
+        # There is no single crop window in a stacked layout - the camera and
+        # the screen are placed separately - so a moving one has nothing to do.
+        config.TRACK_FACES = False
 
     # An explicit flag always beats the marker.
     if args.face_tracking is not None:
@@ -83,7 +122,10 @@ def main() -> int:
     print(f"Model:    {config.WHISPER_MODEL} ({config.WHISPER_DEVICE}/{config.WHISPER_COMPUTE_TYPE})")
     print(f"Language: {language_note}")
     print(f"Captions: {'burned in' if config.BURN_CAPTIONS else 'off'}")
-    print(f"Cropping: {'face-tracked' if config.TRACK_FACES else 'centred'}")
+    if config.CROP_MODE == "crop":
+        print(f"Layout:   crop, {'face-tracked' if config.TRACK_FACES else 'centred'}")
+    else:
+        print(f"Layout:   {config.CROP_MODE}")
     print(f"Format:   {config.TARGET_WIDTH}x{config.TARGET_HEIGHT}\n")
 
     try:

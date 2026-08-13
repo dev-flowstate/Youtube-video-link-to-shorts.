@@ -174,11 +174,18 @@ AUDIO_BITRATE = "160k"
 
 # How the 16:9 source becomes a 9:16 clip.
 #
-#   "crop" - cut a tall slice out of the frame. Right for a talking head: the
-#            subject fills the screen and the empty sides are no loss.
-#   "fit"  - shrink the whole frame to fit the width and fill the rest with a
-#            blurred copy of itself. Right for gameplay, where cropping throws
-#            away the minimap, the kill feed and often the fight itself.
+#   "crop"    - cut a tall slice out of the frame. Right for a talking head:
+#               the subject fills the screen and the empty sides are no loss.
+#   "fit"     - shrink the whole frame to fit the width and fill the rest with
+#               a blurred copy. Right for gameplay, where cropping throws away
+#               the minimap, the kill feed and often the fight itself.
+#   "stacked" - the streamer's camera above, the rest of the frame below.
+#               Right for a stream, where the two things worth watching sit in
+#               different parts of the screen.
+#
+# Cropping is not a mild choice. A 9:16 slice of a 16:9 frame keeps 31.6% of
+# the width, so two thirds of the picture is discarded. On a talking head that
+# is empty room; on a stream it is the game the reaction is about.
 #
 # EsportsClipper marks its output as gameplay, which switches this to "fit"
 # automatically - see apply_content_marker in pipeline.py.
@@ -187,6 +194,30 @@ CROP_MODE = "crop"
 # Blur strength of the backdrop in "fit" mode. Blurred by shrinking and
 # regrowing rather than with gblur, which is far too slow over a whole clip.
 FIT_BACKDROP_BLUR = 12
+
+# ---------------------------------------------------------------------------
+# Stacked layout
+# ---------------------------------------------------------------------------
+
+# Share of the height given to the streamer's camera. The rest holds the full
+# frame, so whatever the reaction is about stays on screen.
+STACKED_CAMERA_SHARE = 0.45
+
+# The camera box is found from where faces actually appear, not from a fixed
+# corner - it sits in a different place for every streamer, and a wrong guess
+# would enlarge a patch of wall. This is how much room to leave around the
+# face, as a multiple of its width, so hair and shoulders are included rather
+# than a tight head crop.
+STACKED_CAMERA_PADDING = 1.9
+
+# Shape of the enlarged camera panel. Roughly 4:3, which suits a webcam better
+# than a square and leaves the lower panel most of the height.
+STACKED_CAMERA_ASPECT = 4.0 / 3.0
+
+# A face must be found in at least this share of sampled frames before the
+# stacked layout is used. Below it there is no reliable camera to enlarge, so
+# the clip falls back to "fit" - which loses nothing - rather than guessing.
+STACKED_MIN_FACE_RATE = 0.25
 
 # Follow faces when choosing the 9:16 crop window instead of always cropping
 # the centre. Falls back to centre framing whenever no face is found. Has no
