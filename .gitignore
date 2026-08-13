@@ -82,3 +82,12 @@ EsportsClipper/data/features/
 # The trained model is kept - it is small, and without it the detector cannot
 # run at all. Its card records what it was trained on and how it scored.
 !EsportsClipper/models/
+
+# Intermediate output from a detection run - rebuilt every time, and only
+# meaningful for the broadcast that produced it.
+EsportsClipper/data/candidates.json
+EsportsClipper/data/final_segments.json
+
+# The synthetic self-test's model. It learned invented data and knows nothing
+# about a real fight; local_detector refuses to load it on purpose.
+EsportsClipper/models/synthetic/

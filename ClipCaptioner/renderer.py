@@ -105,6 +105,7 @@ def _build_filter(
     info: VideoInfo,
     subtitle_name: str | None,
     sendcmd_name: str | None,
+    camera: tracker.CameraBox | None = None,
 ) -> str:
     """Filter chain: crop to 9:16, scale, then burn in the captions.
 
@@ -114,10 +115,21 @@ def _build_filter(
 
     subtitle_name is None when captions are turned off - the clip is still
     cropped, tracked and scaled, it simply carries no burned-in text.
+
+    camera is the box the stacked layout enlarges, and is None when no camera
+    could be found - see _camera_box.
     """
     tail = ["setsar=1"]
     if subtitle_name:
         tail.append(f"subtitles={subtitle_name}")
+
+    if config.CROP_MODE == "stacked":
+        # No camera means no stack. Falling back to "fit" keeps the whole
+        # frame, where falling back to "crop" would throw two thirds of it
+        # away to fix a problem the viewer does not have.
+        if camera is None:
+            return _fit_filter(tail)
+        return _stacked_filter(info, camera, tail)
 
     if config.CROP_MODE == "fit":
         return _fit_filter(tail)
@@ -158,6 +170,82 @@ def _fit_filter(tail: list[str]) -> str:
     )
 
 
+def _stacked_filter(info: VideoInfo, camera: tracker.CameraBox, tail: list[str]) -> str:
+    """The streamer's camera on top, the whole frame below.
+
+    Cropping a stream to 9:16 leaves a face reacting to something the viewer
+    cannot see, and fitting the whole frame leaves the action about a third of
+    the screen tall. Stacking gives the reaction real size without losing the
+    thing it is a reaction to.
+
+    The camera panel is scaled to cover and then centre-cropped, so it fills
+    its share exactly and carries no bars. The lower panel is the *whole*
+    frame - the small original camera included, which is normal in this style
+    of edit and not worth masking - over the same shrink-and-regrow blur
+    _fit_filter uses, for the same reason: gblur over a whole clip is far too
+    slow.
+    """
+    width = config.TARGET_WIDTH
+    top = _even(int(round(config.TARGET_HEIGHT * config.STACKED_CAMERA_SHARE)))
+    bottom = config.TARGET_HEIGHT - top
+    small = max(8, width // config.FIT_BACKDROP_BLUR)
+
+    crop_w, crop_h, x, y = camera.crop(info.width, info.height)
+    crop_w, crop_h = _even(crop_w), _even(crop_h)
+
+    return (
+        "split=3[cam][bg][fg];"
+        f"[cam]crop={crop_w}:{crop_h}:{x}:{y},"
+        f"scale={width}:{top}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={width}:{top}[camera];"
+        f"[bg]scale={width}:{bottom}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{bottom},scale={small}:-2,scale={width}:{bottom}:flags=bilinear[bgb];"
+        f"[fg]scale={width}:-2:flags=lanczos[fgs];"
+        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2[screen];"
+        "[camera][screen]vstack=inputs=2,"
+        + ",".join(tail)
+    )
+
+
+# Detection costs a frame extraction and a pass of the face detector over the
+# whole file, and render_part runs once per part, so the answer is remembered.
+_camera_boxes: dict[Path, tracker.CameraBox | None] = {}
+
+
+def _camera_box(source: Path, info: VideoInfo) -> tracker.CameraBox | None:
+    """Where this clip's camera sits, or None if it has no usable one.
+
+    Never raises: a clip that cannot be stacked is still worth rendering, and
+    _build_filter fits the whole frame instead. The reason is printed once,
+    because a layout quietly turning into a different layout is exactly the
+    kind of thing that goes unnoticed until the upload.
+    """
+    key = source.resolve()
+    if key in _camera_boxes:
+        return _camera_boxes[key]
+
+    try:
+        box = tracker.find_camera_box(source, info)
+    except tracker.TrackingUnavailable as exc:
+        print(f"    no camera found ({exc}) - fitting the whole frame instead")
+        box = None
+    else:
+        if box is None:
+            print(
+                f"    no camera found (a face appears in under "
+                f"{config.STACKED_MIN_FACE_RATE:.0%} of frames) - "
+                f"fitting the whole frame instead"
+            )
+        else:
+            print(
+                f"    camera at {box.x:.3f},{box.y:.3f} "
+                f"sized {box.width:.3f}x{box.height:.3f} of the frame"
+            )
+
+    _camera_boxes[key] = box
+    return box
+
+
 def render_part(
     source: Path,
     part: ClipPart,
@@ -169,6 +257,11 @@ def render_part(
 ) -> Path:
     """Render one part of a clip as a captioned vertical video."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Found from the source rather than the part: the camera does not move
+    # between parts, and one detection pass over the file answers for all of
+    # them.
+    camera = _camera_box(source, info) if config.CROP_MODE == "stacked" else None
 
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_") as tmp:
         work_dir = Path(tmp)
@@ -206,7 +299,7 @@ def render_part(
             "-i",
             str(source),
             "-vf",
-            _build_filter(info, subtitle_name, sendcmd_name),
+            _build_filter(info, subtitle_name, sendcmd_name, camera),
             *_encoder_args(),
             "-pix_fmt",
             "yuv420p",

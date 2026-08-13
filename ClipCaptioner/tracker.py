@@ -15,6 +15,7 @@ instantly across a cut, because sliding through one looks like a mistake.
 
 from __future__ import annotations
 
+import statistics
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -53,8 +54,17 @@ class _Sample:
 # ---------------------------------------------------------------------------
 
 
-def _extract_frames(video: Path, work_dir: Path) -> list[tuple[float, Path]]:
-    """Write downscaled sample frames at a fixed rate."""
+def _extract_frames(
+    video: Path,
+    work_dir: Path,
+    width: int = config.TRACKING_FRAME_WIDTH,
+) -> list[tuple[float, Path]]:
+    """Write downscaled sample frames at a fixed rate.
+
+    The width is an argument rather than read straight from config because the
+    camera hunt needs a bigger one than the crop tracker - see
+    _CAMERA_FRAME_WIDTH.
+    """
     fps = max(0.5, config.TRACKING_SAMPLE_FPS)
     args = [
         ffmpeg_tools.tool_path("ffmpeg"),
@@ -64,7 +74,7 @@ def _extract_frames(video: Path, work_dir: Path) -> list[tuple[float, Path]]:
         "-i",
         str(video),
         "-vf",
-        f"fps={fps},scale={config.TRACKING_FRAME_WIDTH}:-2",
+        f"fps={fps},scale={width}:-2",
         "-vsync",
         "0",
         "-q:v",
@@ -405,3 +415,192 @@ def write_sendcmd(path: list[CropKeyframe], destination: Path) -> Path:
     lines = [f"{keyframe.time_s:.3f} crop x {keyframe.x};\n" for keyframe in path]
     destination.write_text("".join(lines), encoding="utf-8")
     return destination
+
+
+# ---------------------------------------------------------------------------
+# Finding the streamer's camera
+# ---------------------------------------------------------------------------
+
+# Detection width for the camera hunt, in place of TRACKING_FRAME_WIDTH.
+#
+# 480 is the right width for the crop tracker, whose subject is a head filling
+# a fair share of the frame. A streamer's camera is a picture-in-picture box
+# and the face inside it is far smaller: on the PMWC broadcast it measures
+# about 40 px across a 1920-wide frame, which is 10 px at 480 and well under
+# what YuNet will find. Measured over five clips of that broadcast, the share
+# of sampled frames holding a face ran 0.00-0.35 at 480 against 0.40-0.98 at
+# 1280, and only from 960 up did the median position agree between clips of
+# the same layout - at 480 four of the five clips would have been abandoned as
+# having no camera at all. This costs about twice the detection time, which is
+# affordable because the pass runs once per clip.
+_CAMERA_FRAME_WIDTH = 1280
+
+
+@dataclass(frozen=True)
+class CameraBox:
+    """The streamer's camera as fractions of frame width and height.
+
+    Normalised rather than pixels so one measurement survives a rescale: the
+    box is found on downscaled sample frames and applied to the full-size
+    source.
+    """
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def crop(self, width: int, height: int) -> tuple[int, int, int, int]:
+        """This box as an FFmpeg crop (w, h, x, y), clamped inside the frame."""
+        crop_w = max(2, min(width, int(round(self.width * width))))
+        crop_h = max(2, min(height, int(round(self.height * height))))
+        x = max(0, min(width - crop_w, int(round(self.x * width))))
+        y = max(0, min(height - crop_h, int(round(self.y * height))))
+        return crop_w, crop_h, x, y
+
+
+def _sample_faces(
+    samples: list[tuple[float, Path]],
+) -> list[tuple[float, float, float, float] | None]:
+    """Largest face per frame, normalised: centre x, centre y, width, height.
+
+    Normalised on the way out, so the caller never has to know what size the
+    sample frames happened to be. One entry per frame, None where nothing was
+    found, because the share of frames carrying a face is itself the signal
+    that decides whether there is a camera worth enlarging.
+    """
+    try:
+        import cv2
+    except ImportError as exc:
+        raise TrackingUnavailable("opencv-python is not installed") from exc
+
+    if not _MODEL_PATH.exists():
+        raise TrackingUnavailable(f"Face model missing: {_MODEL_PATH.name}")
+
+    detector = None
+    found: list[tuple[float, float, float, float] | None] = []
+
+    for _time_s, frame_path in samples:
+        image = cv2.imread(str(frame_path))
+        if image is None:
+            continue
+
+        height, width = image.shape[:2]
+        if detector is None:
+            detector = cv2.FaceDetectorYN.create(
+                str(_MODEL_PATH),
+                "",
+                (width, height),
+                score_threshold=config.TRACKING_MIN_SCORE,
+            )
+
+        _, faces = detector.detect(image)
+        if faces is None or len(faces) == 0:
+            found.append(None)
+            continue
+
+        # A camera holds one face. Where the broadcast cuts to a crowd or a
+        # caster desk the frame holds several, and the largest is the nearest
+        # the lens; the median across the clip then discards those shots
+        # anyway, since they are a minority of a stream.
+        best = max(faces, key=lambda face: float(face[2]) * float(face[3]))
+        found.append(
+            (
+                (float(best[0]) + float(best[2]) / 2.0) / width,
+                (float(best[1]) + float(best[3]) / 2.0) / height,
+                float(best[2]) / width,
+                float(best[3]) / height,
+            )
+        )
+
+    return found
+
+
+def find_camera_box(video: Path, info: VideoInfo) -> CameraBox | None:
+    """Locate the streamer's camera from where faces actually appear.
+
+    The camera sits somewhere different in every streamer's layout, so a fixed
+    corner is guesswork. What is reliable is that the face inside it stays put
+    for the whole clip, which makes the clip-wide median a far better
+    description of the box than any single frame.
+
+    Median rather than mean throughout: one crowd shot, a poster on the wall or
+    a false positive on a game character drags a mean across the frame and
+    leaves a median where it was.
+
+    Returns None unless a face lands in the same place for at least
+    STACKED_MIN_FACE_RATE of the sampled frames. There is no camera to enlarge
+    below that, and enlarging a guess fills half the screen with a patch of
+    wall.
+    """
+    with tempfile.TemporaryDirectory(prefix="clipcaptioner_camera_") as tmp:
+        work_dir = Path(tmp)
+        frames = _extract_frames(video, work_dir, width=_CAMERA_FRAME_WIDTH)
+        faces = _sample_faces(frames)
+
+    if not faces:
+        raise TrackingUnavailable("No frames could be inspected")
+
+    detected = [face for face in faces if face is not None]
+    if not detected:
+        return None
+
+    centre_x = statistics.median(face[0] for face in detected)
+    centre_y = statistics.median(face[1] for face in detected)
+    face_width = statistics.median(face[2] for face in detected)
+    face_height = statistics.median(face[3] for face in detected)
+
+    # Room around the face for hair and shoulders, applied to both sides of the
+    # detection rather than to its width alone.
+    #
+    # Padding the width and taking the height from the aspect ratio looks like
+    # the same thing and is not. YuNet's box runs brow to chin and is about
+    # 1.25x taller than it is wide, so at STACKED_CAMERA_PADDING 1.9 that route
+    # leaves 0.09 of a face width above the head - 3 px on the PMWC webcam.
+    # Rendered out it is a mugshot with the hair cut off the top and the chin
+    # off the bottom, which is the exact thing the padding exists to prevent.
+    box_width = face_width * config.STACKED_CAMERA_PADDING
+    box_height = face_height * config.STACKED_CAMERA_PADDING
+
+    # Now shape it to the panel. These fractions are of two different lengths,
+    # so the frame's own shape has to come out of the sum: a 0.1-wide box on a
+    # 16:9 frame is 0.178 of the height, not 0.1. Whichever side is short grows
+    # to meet the aspect and neither shrinks, so both paddings survive.
+    frame_aspect = info.width / info.height
+    if box_width * frame_aspect / box_height > config.STACKED_CAMERA_ASPECT:
+        box_height = box_width * frame_aspect / config.STACKED_CAMERA_ASPECT
+    else:
+        box_width = box_height * config.STACKED_CAMERA_ASPECT / frame_aspect
+
+    # A camera tucked into a corner pushes its padded box off the frame. Both
+    # sides shrink together rather than whichever overflowed, so the panel
+    # keeps the shape it is about to be scaled into.
+    overflow = max(1.0, box_width, box_height)
+    box_width /= overflow
+    box_height /= overflow
+
+    box = CameraBox(
+        x=max(0.0, min(1.0 - box_width, centre_x - box_width / 2.0)),
+        y=max(0.0, min(1.0 - box_height, centre_y - box_height / 2.0)),
+        width=box_width,
+        height=box_height,
+    )
+
+    # Counting detections anywhere asks only whether something face-shaped
+    # turned up, not whether it kept turning up in the same place. On a PMWC
+    # clip carrying no webcam at all, false positives scattered over vehicles
+    # and scenery cleared 25% between them and the median landed on a car in
+    # mid-frame - the filtergraph runs and enlarges the wrong thing, which is
+    # the failure worth guarding against. Counting only the frames whose face
+    # lands inside the box makes the test say what it means: a face is in this
+    # one place for at least STACKED_MIN_FACE_RATE of the clip.
+    agreeing = sum(
+        1
+        for face in detected
+        if box.x <= face[0] <= box.x + box.width
+        and box.y <= face[1] <= box.y + box.height
+    )
+    if agreeing < config.STACKED_MIN_FACE_RATE * len(faces):
+        return None
+
+    return box

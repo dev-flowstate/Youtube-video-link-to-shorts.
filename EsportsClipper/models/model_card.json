@@ -1,0 +1,251 @@
+{
+  "trained_utc": "2026-08-13T14:12:32+00:00",
+  "synthetic": false,
+  "feature_names": [
+    "luma_mean",
+    "luma_p99",
+    "bright_frac",
+    "bright_frac_d",
+    "bright_frac_max2",
+    "fire_frac",
+    "fire_frac_d",
+    "fire_frac_max2",
+    "frame_diff",
+    "frame_diff_p95",
+    "scene_cut",
+    "edge_density",
+    "hud_minimap_score",
+    "hud_topleft_score",
+    "hud_teambar_score",
+    "hud_present",
+    "hud_present_frac30",
+    "standings_overlay_present",
+    "dmg_blobs",
+    "dmg_blobs_max2",
+    "killfeed_ink",
+    "killfeed_change",
+    "killfeed_events_10s",
+    "killfeed_events_30s",
+    "alive_ticks_total",
+    "alive_teams",
+    "alive_ticks_d30",
+    "knocked_ticks",
+    "aud_flux_mean",
+    "aud_flux_p95",
+    "aud_gunfire_onsets",
+    "aud_hf_ratio_mean",
+    "aud_speech_energy",
+    "aud_speech_z60",
+    "aud_speech_ahead30",
+    "aud_silence_frac",
+    "aud_low_energy"
+  ],
+  "grid_seconds": 0.5,
+  "block_seconds": 300.0,
+  "purge_seconds": 90.0,
+  "n_splits": 5,
+  "class_counts": {
+    "studio": 18612,
+    "game": 15623,
+    "fight": 17652
+  },
+  "sources": [
+    {
+      "source_id": "4-ohNIcfqr8",
+      "kind": "reel",
+      "rows": 4197
+    },
+    {
+      "source_id": "BFOzTy2ML88",
+      "kind": "broadcast",
+      "rows": 38525
+    },
+    {
+      "source_id": "Bpa2qkFKXQg",
+      "kind": "reel",
+      "rows": 2075
+    },
+    {
+      "source_id": "JbYVFR7DDPc",
+      "kind": "reel",
+      "rows": 5390
+    },
+    {
+      "source_id": "Q6txSYIhSr4",
+      "kind": "reel",
+      "rows": 1700
+    }
+  ],
+  "stages": {
+    "stage_a": {
+      "positive": "gameplay (GAME or FIGHT) vs STUDIO",
+      "training_sources": [
+        "BFOzTy2ML88"
+      ],
+      "rows": 38525,
+      "rows_prior_preserving": 38525,
+      "positives": 19913,
+      "base_rate": 0.5168851395197923,
+      "max_iter": 100,
+      "max_iter_grid": {
+        "50": 0.9775404176115032,
+        "100": 0.9795071826468835,
+        "200": 0.9794579429832035,
+        "400": 0.9778702637940885
+      },
+      "fold_average_precision": [
+        0.983648195095983,
+        0.9861128826512844,
+        0.976050325094141,
+        0.9754297731042623,
+        0.9762947372887469
+      ],
+      "average_precision": 0.9783664149410718,
+      "average_precision_with_reels": 0.9783664149410718,
+      "precision_at_recall_0.5": 0.9866429207479964,
+      "threshold": 0.9609068063639356,
+      "threshold_precision": 0.9800156739811913,
+      "threshold_recall": 0.6279817204841058,
+      "target_precision": 0.98,
+      "target_min_recall": 0.0,
+      "target_met": true,
+      "leakage": {
+        "base_rate": 0.5168851395197923,
+        "ceiling": 0.6461064243997404,
+        "timestamp_only_ap": 0.595058461879892,
+        "timestamp_only_passed": true,
+        "shuffled_labels_ap": 0.4935134743246762,
+        "shuffled_labels_passed": true,
+        "passed": true
+      }
+    },
+    "stage_b": {
+      "positive": "FIGHT vs GAME, on gameplay rows only",
+      "training_sources": [
+        "BFOzTy2ML88"
+      ],
+      "rows": 19913,
+      "rows_prior_preserving": 19913,
+      "positives": 4290,
+      "base_rate": 0.21543715160950133,
+      "max_iter": 50,
+      "max_iter_grid": {
+        "50": 0.39445221999382524,
+        "100": 0.38777108493594387,
+        "200": 0.3794131196806796,
+        "400": 0.37325366050377184
+      },
+      "fold_average_precision": [
+        0.3992068197768603,
+        0.4524720787946199,
+        0.43777585311269085,
+        0.403129128359692,
+        0.2796772199252631
+      ],
+      "average_precision": 0.3956512588619382,
+      "average_precision_with_reels": 0.3956512588619382,
+      "precision_at_recall_0.5": 0.38189256492351475,
+      "threshold": 0.6157914290795609,
+      "threshold_precision": 0.40653873489694387,
+      "threshold_recall": 0.4,
+      "target_precision": 0.8,
+      "target_min_recall": 0.4,
+      "target_met": false,
+      "leakage": {
+        "base_rate": 0.21543715160950133,
+        "ceiling": 0.26929643951187665,
+        "timestamp_only_ap": 0.19726037889400727,
+        "timestamp_only_passed": true,
+        "shuffled_labels_ap": 0.21777327840614966,
+        "shuffled_labels_passed": true,
+        "passed": true
+      }
+    }
+  },
+  "importance": {
+    "stage_a": [
+      [
+        "hud",
+        0.34373417173697723,
+        0.12242546552692549
+      ],
+      [
+        "flash",
+        0.010208063543204186,
+        0.00249069711169534
+      ],
+      [
+        "fire",
+        0.0031247812083656035,
+        0.00161834158401529
+      ],
+      [
+        "motion",
+        0.0019405479074001298,
+        0.0012156719129784732
+      ],
+      [
+        "killfeed",
+        0.0018880699520753108,
+        0.0016091197809714874
+      ],
+      [
+        "audio-caster",
+        0.0015191557823488423,
+        0.0006417337345091383
+      ],
+      [
+        "ticks",
+        0.0003620494011040165,
+        0.0007491522223799291
+      ],
+      [
+        "audio-gunfire",
+        3.241726964828828e-05,
+        0.0003176593691212651
+      ]
+    ],
+    "stage_b": [
+      [
+        "killfeed",
+        0.08020263922645532,
+        0.025586901808535577
+      ],
+      [
+        "hud",
+        0.03381612871311101,
+        0.008202638233315749
+      ],
+      [
+        "ticks",
+        0.029513618213212398,
+        0.020945883876084558
+      ],
+      [
+        "flash",
+        0.029283634992947328,
+        0.015608493738562825
+      ],
+      [
+        "audio-gunfire",
+        0.014201859515753493,
+        0.00728234636325533
+      ],
+      [
+        "fire",
+        0.008248073194520401,
+        0.007284850981974415
+      ],
+      [
+        "motion",
+        0.002050596959894939,
+        0.002980314129541846
+      ],
+      [
+        "audio-caster",
+        -0.000772543908549912,
+        0.005212182918236339
+      ]
+    ]
+  }
+}
