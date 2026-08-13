@@ -25,6 +25,7 @@ import compilation
 import config
 import downloader
 import fight_detector
+import local_detector
 import speech
 import vision_detector
 from downloader import DownloadError, download_all_segments, fetch_video_title
@@ -73,6 +74,30 @@ def _mark_output_as_gameplay(output_dir: Path) -> None:
     except OSError as exc:
         # Only a hint for the next stage; never lose clips over it.
         print(f"Could not write {marker.name}: {exc}")
+
+
+def _find_fights_locally(source_video: Path) -> list:
+    """Score the whole broadcast locally, then have the classifier check.
+
+    Two things the local model is measured at, and they are very different. It
+    separates gameplay from studio at 0.98 precision, which is the interview
+    problem this project exists to fix. It only reaches 0.41 on whether that
+    gameplay is a fight.
+
+    So it does the part it is good at - discarding most of a broadcast for
+    nothing, at every half-second rather than every ten - and the classifier
+    reviews the handful that survive. A few requests instead of a couple of
+    hundred, and no daily quota standing between a broadcast and its clips.
+    """
+    scored = local_detector.detect(source_video)
+    local_detector.summarise(scored)
+
+    fights = [item for item in scored.labels if item.is_fight]
+    spans = vision_detector.fight_windows(fights, config.LOCAL_BRIDGE_SECONDS)
+    print(f"    {len(spans)} candidate fight(s) before review")
+
+    spans = local_detector.rerank(source_video, spans)
+    return clip_windows.windows_from_vision(spans, config.GRID_SECONDS)
 
 
 def _find_fights_by_watching(source_video: Path) -> list:
@@ -172,8 +197,12 @@ def main() -> int:
             source_video = downloader.fetch_source_video(canonical_url, output_dir)
             print(f"Source ready: {source_video.name}\n")
 
-            print(f"Detector: watching the video ({config.VISION_MODEL})")
-            segments = _find_fights_by_watching(source_video)
+            if local_detector.available():
+                print(f"Detector: local model, reviewed by {config.VISION_MODEL}")
+                segments = _find_fights_locally(source_video)
+            else:
+                print(f"Detector: watching the video ({config.VISION_MODEL})")
+                segments = _find_fights_by_watching(source_video)
         else:
             if config.USE_VISION and not config.ALLOW_AUDIO_FALLBACK:
                 # A missing key must stop the run rather than quietly falling

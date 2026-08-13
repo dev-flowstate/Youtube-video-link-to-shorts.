@@ -379,7 +379,10 @@ def classify(frames: list[tuple[float, Path]]) -> list[Labelled]:
     return out
 
 
-def fight_windows(labelled: list[Labelled]) -> list[tuple[float, float]]:
+def fight_windows(
+    labelled: list[Labelled],
+    bridge_seconds: float | None = None,
+) -> list[tuple[float, float]]:
     """Merge neighbouring FIGHT frames into continuous windows.
 
     A fight is rarely one frame, and the sampling is coarse enough that a real
@@ -390,7 +393,10 @@ def fight_windows(labelled: list[Labelled]) -> list[tuple[float, float]]:
     if not hits:
         return []
 
-    bridge = config.VISION_BRIDGE_SECONDS
+    # The default suits looking once every ten seconds, where a gap of twenty
+    # is as likely to be a moment nobody looked at as a real lull. A caller
+    # sampling far more often can see the difference and should say so.
+    bridge = config.VISION_BRIDGE_SECONDS if bridge_seconds is None else bridge_seconds
     windows: list[list[float]] = [[hits[0], hits[0]]]
     for t in hits[1:]:
         if t - windows[-1][1] <= bridge:

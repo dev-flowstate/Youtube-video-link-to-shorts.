@@ -142,6 +142,72 @@ def detect(video: Path, source_id: str | None = None) -> Scored:
     return Scored(times_s=times, gameplay=gameplay, fight=fight, labels=labels)
 
 
+def rerank(video: Path, spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Have the classifier confirm each candidate, and drop the ones it rejects.
+
+    This is why the local model does not have to be excellent. Measured on real
+    footage it separates gameplay from studio at 0.98 precision, which is the
+    interview problem solved, but it only reaches 0.41 on whether that gameplay
+    is a fight. Left alone that would clip a lot of rotations.
+
+    So it is used for what it is good at - throwing away nine tenths of a
+    broadcast for nothing - and the classifier that was measured at 17 of 18
+    frames correct decides which survivors are real. One frame per candidate,
+    nine to a request, so a whole day costs a handful of requests instead of
+    the couple of hundred a full sweep needs.
+
+    A candidate is kept if the classifier is unavailable or the request fails.
+    Being unsure is a reason to leave a clip in for a human to reject, not to
+    silently delete footage that was probably a fight.
+    """
+    if not spans:
+        return spans
+
+    import vision_detector
+
+    if not vision_detector.available():
+        print("    no key - keeping local candidates unreviewed")
+        return spans
+
+    import subprocess
+    import tempfile
+
+    kept: list[tuple[float, float]] = []
+    with tempfile.TemporaryDirectory(prefix="rerank_") as tmp:
+        work = Path(tmp)
+        frames: list[tuple[float, Path]] = []
+
+        for index, (start, end) in enumerate(spans):
+            middle = (start + end) / 2.0
+            image = work / f"c{index:04d}.jpg"
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-ss", f"{middle:.2f}", "-i", str(video),
+                 "-frames:v", "1", "-vf", f"scale={config.VISION_FRAME_WIDTH}:-2", str(image)],
+                check=False,
+            )
+            if image.exists():
+                frames.append((middle, image))
+
+        if not frames:
+            return spans
+
+        print(f"    reviewing {len(frames)} candidate(s) with {config.VISION_MODEL}")
+        try:
+            verdicts = vision_detector.classify(frames)
+        except vision_detector.VisionUnavailable as exc:
+            print(f"    review unavailable ({exc}) - keeping candidates unreviewed")
+            return spans
+
+        by_time = {round(item.time_s, 2): item.label for item in verdicts}
+        for (start, end), (middle, _path) in zip(spans, frames):
+            label = by_time.get(round(middle, 2), vision_detector.UNKNOWN)
+            if label in (vision_detector.FIGHT, vision_detector.UNKNOWN):
+                kept.append((start, end))
+
+    print(f"    kept {len(kept)} of {len(spans)} candidate(s)")
+    return kept
+
+
 def summarise(scored: Scored) -> None:
     """What the model saw, so a run can be judged before its clips are watched."""
     counts: dict[str, int] = {}
