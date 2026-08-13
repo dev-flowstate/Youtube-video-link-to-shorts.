@@ -92,14 +92,23 @@ def main() -> int:
     config.BURN_CAPTIONS = args.captions if args.captions is not None else _ask_about_captions()
 
     # Whatever produced these clips may have left a note about what they are.
-    content_type = pipeline.apply_content_marker(args.input)
+    marker = pipeline.apply_content_marker(args.input) or {}
+    content_type = marker.get("content_type")
 
-    # Order of authority: an explicit flag, then the marker, then ask. Clips
-    # added by hand carry no marker, and those are exactly the ones where a
-    # silent default has been throwing two thirds of the frame away.
+    # Order of authority: an explicit flag, then a marker that actually stated
+    # a layout, then ask.
+    #
+    # The middle test has to be "did it state a layout", not "does a marker
+    # exist". The downloader's marker records a tail padding and says nothing
+    # about framing, so treating its presence as an answer meant a note left in
+    # one folder silently decided the layout for whatever footage was dropped
+    # there afterwards - which is exactly how stream clips ended up cropped
+    # without ever being asked about.
     if args.layout is not None:
         config.CROP_MODE = args.layout
-    elif content_type is None:
+    elif marker.get("crop_mode") in ("crop", "fit", "stacked"):
+        print(f"Layout from content.json: {config.CROP_MODE}")
+    else:
         config.CROP_MODE = _ask_about_layout()
 
     if config.CROP_MODE == "stacked":
@@ -126,6 +135,14 @@ def main() -> int:
         print(f"Layout:   crop, {'face-tracked' if config.TRACK_FACES else 'centred'}")
     else:
         print(f"Layout:   {config.CROP_MODE}")
+    if config.SOURCE_TAIL_PADDING_SECONDS > 0:
+        # Worth stating rather than applying quietly. It is right for clips the
+        # downloader cut, and wrong for anything else dropped in the same
+        # folder afterwards - where it would trim real footage off the end.
+        print(
+            f"Tail:     last {config.SOURCE_TAIL_PADDING_SECONDS:.0f}s treated as "
+            "padding (from content.json)"
+        )
     print(f"Format:   {config.TARGET_WIDTH}x{config.TARGET_HEIGHT}\n")
 
     try:

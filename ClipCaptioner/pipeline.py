@@ -66,13 +66,20 @@ def transcribe_clip(clip: Path) -> tuple[list[CaptionGroup], str | None]:
     return caption_builder.build_groups(words), language
 
 
-def apply_content_marker(input_dir: Path) -> str | None:
+def apply_content_marker(input_dir: Path) -> dict | None:
     """Honour a content.json left by whatever produced these clips.
 
     EsportsClipper writes one saying the footage is gameplay, which turns face
     tracking off. There is no speaker to follow in a match feed, so the
     detector locks onto a webcam corner, a crowd shot or a logo and pans the
     crop around chasing it - worse than simply holding the centre.
+
+    Returns what the marker actually said, rather than only its content type,
+    because a marker is allowed to be partial and the caller has to be able to
+    tell the difference. The downloader's marker records a tail padding and
+    nothing about framing; treating its mere existence as an answer to every
+    question let a stale note in one folder silently decide the layout for
+    whatever footage was dropped there later.
     """
     marker = input_dir / "content.json"
     if not marker.exists():
@@ -84,11 +91,15 @@ def apply_content_marker(input_dir: Path) -> str | None:
         print(f"Ignoring unreadable {marker.name}: {exc}")
         return None
 
+    if not isinstance(data, dict):
+        print(f"Ignoring {marker.name}: expected an object.")
+        return None
+
     if data.get("face_tracking") is False:
         config.TRACK_FACES = False
 
     mode = data.get("crop_mode")
-    if mode in ("crop", "fit"):
+    if mode in ("crop", "fit", "stacked"):
         config.CROP_MODE = mode
 
     # The downloader leaves a tail on every clip so a sentence can be finished
@@ -98,7 +109,7 @@ def apply_content_marker(input_dir: Path) -> str | None:
     if isinstance(padding, (int, float)) and padding >= 0:
         config.SOURCE_TAIL_PADDING_SECONDS = float(padding)
 
-    return data.get("content_type")
+    return data
 
 
 def _crop_path(clip: Path, info: VideoInfo) -> list[tracker.CropKeyframe] | None:
