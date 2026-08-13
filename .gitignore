@@ -65,3 +65,20 @@ graphify-out/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ---------------------------------------------------------------------------
+# Training data for the local fight detector
+# ---------------------------------------------------------------------------
+# Source footage is tens of gigabytes and re-downloadable from the ids recorded
+# in config.py.
+EsportsClipper/data/reels/
+EsportsClipper/data/broadcasts/
+
+# Feature caches are derived: about 25 minutes of CPU rebuilds one from its
+# video, and they are tied to a schema version that changes whenever a feature
+# does.
+EsportsClipper/data/features/
+
+# The trained model is kept - it is small, and without it the detector cannot
+# run at all. Its card records what it was trained on and how it scored.
+!EsportsClipper/models/
