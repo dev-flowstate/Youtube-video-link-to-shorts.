@@ -387,14 +387,24 @@ OPEN_ON_HOOK = True
 
 # How far into a clip the start may move, in seconds.
 #
-# The downloader keeps HOOK_LEAD_SECONDS - 10s - of run-up in front of the
-# moment people replayed, and that run-up is exactly what there is to choose
-# from. Past it the start would be eating into the moment the clip exists for.
+# The downloader keeps HOOK_LEAD_SECONDS of run-up in front of the moment
+# people replayed, and that run-up is exactly what there is to choose from.
+# Past it the start would be eating into the moment the clip exists for.
 #
 # Nothing else bounds this: THOUGHT_MIN_SECONDS stops a clip being trimmed
 # down to nothing, but on a long clip that alone would allow the opening to
 # skip most of the way to the payoff.
-MAX_START_SHIFT_SECONDS = 10.0
+# Raised from 10.0 after measuring it on eight real clips. The run-up is the
+# clip's setup by construction, so the strongest sentence tends to sit near the
+# far end of it, and 10.0 kept stopping just short: one clip's first sentence
+# boundary fell at 10.65s and so never moved at all, and another opened on
+# "I think, you know, one of my," where a second and a half later it could have
+# opened on "Two people told me they never wanna come back."
+#
+# 10.0 was also conservative for a reason that does not hold: the downloader
+# snaps the cut outward to a pause, so the moment the clip exists for sits at
+# HOOK_LEAD_SECONDS or later, not earlier.
+MAX_START_SHIFT_SECONDS = 15.0
 
 # Let Gemini pick the opening instead of scoring sentences by their shape.
 # Shape can see a question mark, a number or a name; it cannot see whether a
@@ -416,3 +426,29 @@ MAX_PART_DURATION_S = 179.0
 # Never emit a trailing fragment shorter than this; merge it into the
 # previous part instead.
 MIN_PART_DURATION_S = 15.0
+
+# ---------------------------------------------------------------------------
+# Filler footage
+# ---------------------------------------------------------------------------
+
+# Ambient motion under a podcast clip, to hold attention the way parkour or
+# subway-surfer gameplay does on other channels. Off by default and turned
+# into a prompt at startup - see _ask_about_filler in main.py - or set from
+# the command line with --parkour / --no-parkour. Filler is an opinion about
+# the clip, not a correction to it, so a piped or scheduled run leaves it off
+# rather than guessing.
+PARKOUR_FILLER = False
+
+# Topics tried in order until one has footage, via stock.fetch(). Kept as a
+# list rather than one topic because a niche query like "subway surfers
+# gameplay" can come back empty on a stock site built for real-world footage;
+# the earlier, more generic topics almost always have something.
+FILLER_TOPICS: list[str] = ["parkour", "satisfying", "subway surfers gameplay"]
+
+# Share of the height given to the podcast. The rest holds the filler strip.
+# The podcast is the content and has to keep dominating the frame; the filler
+# is peripheral motion meant to catch the eye, not compete with it, so the
+# split leans hard towards the podcast - the opposite emphasis from
+# STACKED_CAMERA_SHARE, where both halves of a stream reaction are actually
+# worth watching and the split sits close to even.
+FILLER_PODCAST_SHARE = 0.70

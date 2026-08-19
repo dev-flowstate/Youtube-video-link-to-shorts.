@@ -7,6 +7,7 @@ import queue
 import tempfile
 import threading
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import audio
@@ -19,7 +20,7 @@ import thought
 import titler
 import tracker
 import transcriber
-from models import CaptionGroup, VideoInfo, Word
+from models import CaptionGroup, VideoInfo, Word, join_word_texts
 
 
 class PipelineError(Exception):
@@ -169,7 +170,33 @@ def render_clip(
         )
         groups = thought.trim_groups(groups, usable_end)
 
+    # Open on a hook. Chosen after the end, not before it, because the floor on
+    # how short a clip may be trimmed is measured against the end that was
+    # actually picked rather than against the whole padded file.
+    start = thought.choose_start(groups, usable_end, language)
+    if start > 0:
+        groups = thought.trim_start(groups, start)
+        usable_end -= start
+        opening = join_word_texts(
+            [word.text for group in groups[:4] for word in group.words]
+        )
+        print(f'    opened on a hook: {start:.1f}s in - "{opening}..."')
+
     parts = splitter.split_into_parts(groups, usable_end)
+
+    # split_into_parts measures from the clip's first frame, but render_part
+    # seeks the *source* with -ss part.start_s and rebases the face-tracking
+    # keyframes against it, and both of those are still in source time. Give
+    # the trimmed seconds back so a part points where it used to.
+    #
+    # The captions inside each part are deliberately left alone: they were
+    # rebased onto the trimmed timeline by trim_start and then onto the part by
+    # split_into_parts, which is the same timeline the seek produces.
+    if start > 0:
+        parts = [
+            replace(part, start_s=part.start_s + start, end_s=part.end_s + start)
+            for part in parts
+        ]
 
     # The title decides the filename, so it has to be worked out before the
     # output path exists, not written alongside it afterwards.
