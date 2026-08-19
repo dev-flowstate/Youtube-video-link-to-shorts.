@@ -40,13 +40,18 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 #
 # Supply runs out on its own: clips may not overlap, so a 55 minute stream
 # yields about 27 distinct ones however many are asked for.
-CLIPS_PER_HOUR = 15
+# Was 15, which turned a two hour episode into thirty clips and spent most of
+# them on moments that were merely above average. Four an hour keeps only
+# moments with a clear peak behind them: the same episode now yields about
+# eight, and a clip has to earn its slot against the whole hour rather than
+# against its immediate neighbours.
+CLIPS_PER_HOUR = 4
 
-# Floor for short videos and ceiling for very long ones. Every clip costs a
-# download and a captioning pass, so the ceiling keeps an all-day stream from
-# turning into a week of rendering.
-MIN_CLIPS = 5
-MAX_CLIPS = 40
+# Floor for short videos and ceiling for very long ones. The floor is low on
+# purpose - a ten minute video that holds three good moments should give three
+# clips, not five padded out to meet a quota.
+MIN_CLIPS = 3
+MAX_CLIPS = 20
 
 # Set a number here to ignore the scaling and always take exactly that many.
 FIXED_CLIP_COUNT: int | None = None

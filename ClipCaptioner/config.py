@@ -26,9 +26,16 @@ OUTPUT_DIR = _PROJECT_ROOT / "output"
 # Transcription
 # ---------------------------------------------------------------------------
 
-# faster-whisper model size. "small" balances accuracy against CPU time.
-# "base" is ~3x faster and noticeably less accurate; "medium" is far slower.
-WHISPER_MODEL = "small"
+# faster-whisper model size. Measured on a real podcast clip, both int8 on
+# CPU: small transcribed it in 19s with 4.7% of words below 0.5 confidence,
+# medium in 47s with 2.8%. Medium
+# roughly halves the words the model was unsure about, and the ones it fixed
+# were real - "I asked them" for "I ask them", "noticed" for "notice".
+#
+# 2.5x slower, but that is 47s against a render that takes minutes, and a wrong
+# word is burned into the video where nobody can fix it. Drop back to "small"
+# if a batch is running overnight and accuracy matters less than throughput.
+WHISPER_MODEL = "medium"
 
 # int8 is the right choice without an NVIDIA GPU.
 WHISPER_DEVICE = "cpu"
