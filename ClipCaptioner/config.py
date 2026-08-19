@@ -335,8 +335,28 @@ TITLE_MAX_CHARS = 70
 # Needs GEMINI_API_KEY in the environment and `py -m pip install google-genai`.
 # With either missing, or if the call fails, the heuristic runs instead, so
 # this is safe to leave on.
-USE_GEMINI_TITLES = True
-GEMINI_MODEL = "gemini-3-flash-preview"
+# Off. The key available here allows about five requests a day, and three
+# features share it - titles, hook selection and b-roll search terms - so a
+# single clip can exhaust it. The failure is the quiet kind: every one of them
+# falls back to a heuristic and the run still finishes, so the only symptom is
+# that results silently get worse partway through a batch, differently on every
+# run.
+#
+# A pipeline cannot depend on that. The heuristics are now the workflow rather
+# than the safety net, which also makes a run deterministic and free. Set this
+# back to True only with a key that has real quota behind it.
+USE_GEMINI_TITLES = False
+# Was gemini-3-flash-preview, whose free tier allows twenty requests a day.
+# Three features share this setting - titles, hook selection and b-roll search
+# terms - so one clip can spend three of that twenty, and a batch exhausts it
+# before the first handful of clips are done. The failure is quiet: every one
+# of them falls back to a heuristic and the run still finishes, so the only
+# symptom is that the results get worse.
+#
+# Checked directly: on this key gemini-3-flash-preview and gemini-flash-latest
+# both answer 429, and gemini-3.1-flash-lite answers normally. It is also the
+# model EsportsClipper settled on after measuring 17 of 18 frames correct.
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 # A generated title is rejected unless this share of its meaningful words also
 # appear in the transcript. The heuristic physically cannot invent anything; a
@@ -411,7 +431,17 @@ MAX_START_SHIFT_SECONDS = 15.0
 # line is worth hearing. Needs GEMINI_API_KEY and google-genai exactly as
 # USE_GEMINI_TITLES does, costs one request per clip, and falls back to the
 # heuristic without either - so it is safe to leave on.
-USE_GEMINI_HOOKS = True
+# Off. The key available here allows about five requests a day, and three
+# features share it - titles, hook selection and b-roll search terms - so a
+# single clip can exhaust it. The failure is the quiet kind: every one of them
+# falls back to a heuristic and the run still finishes, so the only symptom is
+# that results silently get worse partway through a batch, differently on every
+# run.
+#
+# A pipeline cannot depend on that. The heuristics are now the workflow rather
+# than the safety net, which also makes a run deterministic and free. Set this
+# back to True only with a key that has real quota behind it.
+USE_GEMINI_HOOKS = False
 
 # ---------------------------------------------------------------------------
 # Splitting
