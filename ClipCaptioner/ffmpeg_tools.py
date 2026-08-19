@@ -113,7 +113,7 @@ def probe_video(path: Path) -> VideoInfo:
         "-select_streams",
         "v:0",
         "-show_entries",
-        "stream=width,height:format=duration",
+        "stream=width,height,r_frame_rate:format=duration",
         "-of",
         "json",
         str(path),
@@ -136,4 +136,5 @@ def probe_video(path: Path) -> VideoInfo:
         width=int(streams[0]["width"]),
         height=int(streams[0]["height"]),
         duration_s=duration,
+        fps=streams[0].get("r_frame_rate") or "30",
     )

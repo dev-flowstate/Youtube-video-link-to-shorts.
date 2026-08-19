@@ -41,6 +41,12 @@ def _parse_args() -> argparse.Namespace:
                           help="Follow faces when cropping to vertical.")
     tracking.add_argument("--no-face-tracking", dest="face_tracking", action="store_false",
                           help="Hold the centre instead. Right for gameplay.")
+
+    filler = parser.add_mutually_exclusive_group()
+    filler.add_argument("--parkour", dest="parkour", action="store_true", default=None,
+                        help="Play ambient filler footage under the clip without asking.")
+    filler.add_argument("--no-parkour", dest="parkour", action="store_false",
+                        help="Skip filler footage.")
     return parser.parse_args()
 
 
@@ -82,6 +88,24 @@ def _ask_about_layout() -> str:
         return "fit"
 
     return {"2": "stacked", "3": "fit"}.get(answer, "crop")
+
+
+def _ask_about_filler() -> bool:
+    """Ask whether to run ambient filler footage under the clip.
+
+    Worth asking rather than assuming either way: it is meant to hold
+    attention under a talking head, but has no place under gameplay or a
+    stream, where the frame is already busy with something to watch.
+    """
+    print("\nAdd ambient filler footage (parkour, satisfying clips, etc.)")
+    try:
+        answer = input("under the clip? [y/N] ").strip().lower()
+    except EOFError:
+        # Piped or scheduled run - filler is an opinion about the clip, and a
+        # non-interactive run should not silently apply one.
+        return False
+
+    return answer in {"y", "yes"}
 
 
 def main() -> int:
@@ -131,6 +155,8 @@ def main() -> int:
     if args.face_tracking is not None:
         config.TRACK_FACES = args.face_tracking
 
+    config.PARKOUR_FILLER = args.parkour if args.parkour is not None else _ask_about_filler()
+
     language_note = config.WHISPER_LANGUAGE or "auto-detect"
 
     print("\nClip Captioner")
@@ -146,6 +172,7 @@ def main() -> int:
         print(f"Layout:   crop, {'face-tracked' if config.TRACK_FACES else 'centred'}")
     else:
         print(f"Layout:   {config.CROP_MODE}")
+    print(f"Filler:   {'on' if config.PARKOUR_FILLER else 'off'}")
     if config.SOURCE_TAIL_PADDING_SECONDS > 0:
         # Worth stating rather than applying quietly. It is right for clips the
         # downloader cut, and wrong for anything else dropped in the same

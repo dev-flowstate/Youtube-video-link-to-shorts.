@@ -11,6 +11,7 @@ from pathlib import Path
 import ass_writer
 import config
 import ffmpeg_tools
+import stock
 import tracker
 from models import ClipPart, VideoInfo
 
@@ -207,6 +208,97 @@ def _stacked_filter(info: VideoInfo, camera: tracker.CameraBox, tail: list[str])
     )
 
 
+def _filler_filter(
+    info: VideoInfo,
+    subtitle_name: str | None,
+    sendcmd_name: str | None,
+    camera: tracker.CameraBox | None,
+) -> str:
+    """The podcast on top, looping ambient filler footage below.
+
+    Filler is peripheral - motion to hold a scroll, not something the viewer
+    came for - so the split leans hard towards the podcast rather than the
+    near-even one _stacked_filter gives a reacting streamer, where both
+    halves are genuinely worth watching. See FILLER_PODCAST_SHARE.
+
+    The podcast panel is exactly whatever _build_filter already produces for
+    the chosen CROP_MODE - crop, fit or stacked - with no captions burned in
+    yet, covered and centre-cropped down into its share of the height. That
+    reuses the existing framing logic outright, rather than a third copy of
+    it. The filler panel (input 1, a second physical file) gets the same
+    cover-and-crop treatment, so it fills its strip with no bars of its own.
+    Captions are burned once, after the two panels are stacked into the
+    finished frame, so they land exactly where they do without filler.
+
+    Filler shorter than the clip is looped by the caller with -stream_loop -1
+    on its input, not here - vstack stops at the shorter of its two inputs,
+    so the podcast (already trimmed by -t) still decides the output length.
+
+    The filler is resampled to the podcast's own frame rate before stacking.
+    Stock footage rarely shares the source's rate - 25fps against a 29.97fps
+    source, say - and vstack combining two different rates hands the encoder
+    a variable one, which h264_qsv refuses outright ("Current frame rate is
+    unsupported"). Matching it keeps the composite as steady as an ordinary
+    render.
+    """
+    width = config.TARGET_WIDTH
+    top = _even(int(round(config.TARGET_HEIGHT * config.FILLER_PODCAST_SHARE)))
+    bottom = config.TARGET_HEIGHT - top
+
+    # No captions here - they belong on the finished, stacked frame below.
+    podcast_chain = _build_filter(info, None, sendcmd_name, camera)
+
+    tail = ["setsar=1"]
+    if subtitle_name:
+        tail.append(f"subtitles={subtitle_name}")
+
+    return (
+        f"[0:v]{podcast_chain}[podcast];"
+        f"[podcast]scale={width}:{top}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{top}[podtop];"
+        f"[1:v]fps={info.fps},scale={width}:{bottom}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{bottom}[fillbot];"
+        "[podtop][fillbot]vstack=inputs=2," + ",".join(tail) + "[vout]"
+    )
+
+
+# Resolved once per run and reused for every clip: the choice does not depend
+# on which clip is being rendered, and re-fetching per clip would repeat the
+# same cache lookups stock.py already does on disk.
+_filler_source: Path | None = None
+_filler_resolved = False
+
+
+def _filler_footage() -> Path | None:
+    """One piece of ambient filler footage, or None if none could be had.
+
+    Tries FILLER_TOPICS in order and stops at the first with results - a
+    niche topic like "subway surfers gameplay" can come back empty on a stock
+    site built for real-world footage, where the earlier, more generic topics
+    almost always have something.
+
+    Never raises: filler is a bonus on top of the normal render, and
+    render_part falls back to the ordinary layout - never a black strip -
+    when this comes back empty.
+    """
+    global _filler_source, _filler_resolved
+    if _filler_resolved:
+        return _filler_source
+
+    _filler_resolved = True
+    for topic in config.FILLER_TOPICS:
+        found = stock.fetch(topic, want=1)
+        if found:
+            _filler_source = found[0]
+            return _filler_source
+
+    print(
+        f"    no filler footage found for {', '.join(config.FILLER_TOPICS)} "
+        "- using the normal layout"
+    )
+    return None
+
+
 # Detection costs a frame extraction and a pass of the face detector over the
 # whole file, and render_part runs once per part, so the answer is remembered.
 _camera_boxes: dict[Path, tracker.CameraBox | None] = {}
@@ -263,6 +355,8 @@ def render_part(
     # them.
     camera = _camera_box(source, info) if config.CROP_MODE == "stacked" else None
 
+    filler_source = _filler_footage() if config.PARKOUR_FILLER else None
+
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_") as tmp:
         work_dir = Path(tmp)
 
@@ -298,8 +392,33 @@ def render_part(
             f"{part.duration_s:.3f}",
             "-i",
             str(source),
-            "-vf",
-            _build_filter(info, subtitle_name, sendcmd_name, camera),
+        ]
+
+        if filler_source is not None:
+            # Looped indefinitely so shorter filler never freezes or cuts to
+            # black. That leaves nothing to stop vstack on its own: it holds
+            # the podcast's last frame once that (finite, -t above) input
+            # ends rather than closing, so without a hard stop the output
+            # would run forever against the looped filler. An explicit -t on
+            # the *output* is that stop, independent of the input-side one.
+            args += [
+                "-stream_loop",
+                "-1",
+                "-i",
+                str(filler_source),
+                "-filter_complex",
+                _filler_filter(info, subtitle_name, sendcmd_name, camera),
+                "-map",
+                "[vout]",
+                "-map",
+                "0:a",
+                "-t",
+                f"{part.duration_s:.3f}",
+            ]
+        else:
+            args += ["-vf", _build_filter(info, subtitle_name, sendcmd_name, camera)]
+
+        args += [
             *_encoder_args(),
             "-pix_fmt",
             "yuv420p",

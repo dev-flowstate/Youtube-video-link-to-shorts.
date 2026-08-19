@@ -86,3 +86,9 @@ class VideoInfo:
     width: int
     height: int
     duration_s: float
+    # As ffprobe's r_frame_rate reports it, e.g. "30000/1001" - kept as a
+    # ratio rather than a float so it can be dropped straight into an FFmpeg
+    # fps= expression with no rounding. Only the filler composite needs it,
+    # to resample stock footage onto the source's own rate before stacking -
+    # see _filler_filter in renderer.py.
+    fps: str
