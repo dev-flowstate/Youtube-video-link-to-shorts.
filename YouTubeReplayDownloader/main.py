@@ -25,7 +25,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://youtu.be/Xs94KBeIiAo?si=AlURzd32Fzy4RMsV"
+YOUTUBE_URL = "https://youtu.be/Q2hOryHdgAk?si=ZtRptZqkR7UQCxlx"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -256,6 +256,16 @@ def _print_segments(segments: list[ReplaySegment]) -> None:
 
 
 def main() -> int:
+    # Clip filenames are built from YouTube titles, and those carry emoji.
+    # In a console Windows copes; the moment stdout is a pipe it falls back
+    # to the ANSI codepage and the first emoji title raises
+    # UnicodeEncodeError from a print, part way through a run that has
+    # already downloaded gigabytes.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
     output_dir = OUTPUT_DIR
 
     print("YouTube Highlight Downloader")
