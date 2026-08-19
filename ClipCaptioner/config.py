@@ -176,6 +176,42 @@ VIDEO_PRESET = "medium"
 AUDIO_BITRATE = "160k"
 
 # ---------------------------------------------------------------------------
+# Stock footage
+# ---------------------------------------------------------------------------
+
+# Where fetched clips are kept. Cached rather than re-downloaded, so a second
+# clip mentioning the sea costs nothing and the folder grows into a library
+# that works offline.
+STOCK_DIR = _PROJECT_ROOT / "stock"
+
+# Pexels is used rather than anything scraped from YouTube. Its licence permits
+# commercial and monetised use with no attribution, which is the difference
+# between a feature and a channel strike.
+#
+# The key lives in the PEXELS_API_KEY environment variable, never in the repo.
+# Without it the pipeline still runs and simply produces no cutaways.
+
+# Portrait suits a 1080x1920 frame. Landscape stock has to be cropped or
+# letterboxed to fit, which wastes most of what was downloaded.
+STOCK_ORIENTATION = "portrait"
+
+# Measured on the *short* side, not the height. Portrait stock is tall by
+# definition, so a height test passes a 720x1280 clip that is only 720 wide and
+# then upscales it half again to fill a 1080-wide frame. The short side is the
+# one that has to cover the frame whichever way the footage is oriented.
+#
+# Above this the file is discarded in favour of the smallest that still clears
+# it: downloading 4K to show for one second is bytes and decode time for detail
+# nobody sees.
+STOCK_MIN_SHORT_SIDE = 1080
+
+# Source clips longer than this are whole scenes. A cutaway needs a second or
+# two, so a long download is spent on footage that is cut away from at once.
+STOCK_MAX_SOURCE_SECONDS = 30
+
+STOCK_TIMEOUT_S = 30
+
+# ---------------------------------------------------------------------------
 # Face tracking
 # ---------------------------------------------------------------------------
 
@@ -335,6 +371,37 @@ THOUGHT_MAX_SECONDS = 55.0
 # length instead and the padding is kept, which turned every 45s clip into a
 # 65s one. Clips with no padding, like EsportsClipper's, leave this at zero.
 SOURCE_TAIL_PADDING_SECONDS = 0.0
+
+# ---------------------------------------------------------------------------
+# Opening on a hook
+# ---------------------------------------------------------------------------
+
+# Start clips on the sentence most likely to stop a scroll, rather than
+# wherever the downloader's run-up happened to land.
+#
+# The end is already chosen this way; the start was not, and it matters more.
+# There is no thumbnail in a Shorts feed, so the first seconds are the whole
+# audition, and what they most often contained was the back half of a sentence
+# the viewer never heard the front of.
+OPEN_ON_HOOK = True
+
+# How far into a clip the start may move, in seconds.
+#
+# The downloader keeps HOOK_LEAD_SECONDS - 10s - of run-up in front of the
+# moment people replayed, and that run-up is exactly what there is to choose
+# from. Past it the start would be eating into the moment the clip exists for.
+#
+# Nothing else bounds this: THOUGHT_MIN_SECONDS stops a clip being trimmed
+# down to nothing, but on a long clip that alone would allow the opening to
+# skip most of the way to the payoff.
+MAX_START_SHIFT_SECONDS = 10.0
+
+# Let Gemini pick the opening instead of scoring sentences by their shape.
+# Shape can see a question mark, a number or a name; it cannot see whether a
+# line is worth hearing. Needs GEMINI_API_KEY and google-genai exactly as
+# USE_GEMINI_TITLES does, costs one request per clip, and falls back to the
+# heuristic without either - so it is safe to leave on.
+USE_GEMINI_HOOKS = True
 
 # ---------------------------------------------------------------------------
 # Splitting

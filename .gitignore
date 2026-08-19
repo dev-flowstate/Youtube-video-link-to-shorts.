@@ -91,3 +91,7 @@ EsportsClipper/data/final_segments.json
 # The synthetic self-test's model. It learned invented data and knows nothing
 # about a real fight; local_detector refuses to load it on purpose.
 EsportsClipper/models/synthetic/
+
+# Stock footage fetched from Pexels. Re-downloadable from the topic name, and
+# a library of it grows well past what belongs in a repo.
+ClipCaptioner/stock/
