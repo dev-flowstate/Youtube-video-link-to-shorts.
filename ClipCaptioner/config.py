@@ -467,6 +467,12 @@ MIN_PART_DURATION_S = 15.0
 # the command line with --parkour / --no-parkour. Filler is an opinion about
 # the clip, not a correction to it, so a piped or scheduled run leaves it off
 # rather than guessing.
+# Cut away to stock footage when the speaker names something concrete - a
+# charging phone as he says the battery is draining, children as he says "if
+# you're a kid". On by default because it is the point of fetching stock at
+# all; the planner is conservative and most clips get none.
+USE_BROLL = True
+
 PARKOUR_FILLER = False
 
 # Topics tried in order until one has footage, via stock.fetch(). Kept as a

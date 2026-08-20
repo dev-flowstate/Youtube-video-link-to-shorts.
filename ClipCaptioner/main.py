@@ -42,6 +42,12 @@ def _parse_args() -> argparse.Namespace:
     tracking.add_argument("--no-face-tracking", dest="face_tracking", action="store_false",
                           help="Hold the centre instead. Right for gameplay.")
 
+    cutaways = parser.add_mutually_exclusive_group()
+    cutaways.add_argument("--broll", dest="broll", action="store_true", default=None,
+                          help="Cut away to stock footage on concrete nouns.")
+    cutaways.add_argument("--no-broll", dest="broll", action="store_false",
+                          help="Never cut away from the speaker.")
+
     filler = parser.add_mutually_exclusive_group()
     filler.add_argument("--parkour", dest="parkour", action="store_true", default=None,
                         help="Play ambient filler footage under the clip without asking.")
@@ -154,6 +160,12 @@ def main() -> int:
     # An explicit flag always beats the marker.
     if args.face_tracking is not None:
         config.TRACK_FACES = args.face_tracking
+
+    # No prompt for this one. There are already three, and unlike filler a
+    # cutaway is only planned when the speaker actually names something
+    # concrete - most clips get none and never notice the setting.
+    if args.broll is not None:
+        config.USE_BROLL = args.broll
 
     config.PARKOUR_FILLER = args.parkour if args.parkour is not None else _ask_about_filler()
 

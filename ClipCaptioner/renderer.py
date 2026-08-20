@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import ass_writer
+import broll
 import config
 import ffmpeg_tools
 import stock
@@ -213,6 +214,8 @@ def _filler_filter(
     subtitle_name: str | None,
     sendcmd_name: str | None,
     camera: tracker.CameraBox | None,
+    cutaways: list[broll.Cutaway],
+    first_cutaway_input: int,
 ) -> str:
     """The podcast on top, looping ambient filler footage below.
 
@@ -229,6 +232,10 @@ def _filler_filter(
     cover-and-crop treatment, so it fills its strip with no bars of its own.
     Captions are burned once, after the two panels are stacked into the
     finished frame, so they land exactly where they do without filler.
+
+    Cutaways go onto the podcast panel, not over the finished frame. The
+    footage illustrates what is being *said*, so it belongs where the speaker
+    was, and the filler strip carries on underneath it untouched.
 
     Filler shorter than the clip is looped by the caller with -stream_loop -1
     on its input, not here - vstack stops at the shorter of its two inputs,
@@ -248,6 +255,8 @@ def _filler_filter(
     # No captions here - they belong on the finished, stacked frame below.
     podcast_chain = _build_filter(info, None, sendcmd_name, camera)
 
+    covering, panel = _cutaway_stages(cutaways, first_cutaway_input, width, top, "podtop")
+
     tail = ["setsar=1"]
     if subtitle_name:
         tail.append(f"subtitles={subtitle_name}")
@@ -256,9 +265,98 @@ def _filler_filter(
         f"[0:v]{podcast_chain}[podcast];"
         f"[podcast]scale={width}:{top}:force_original_aspect_ratio=increase,"
         f"crop={width}:{top}[podtop];"
-        f"[1:v]fps={info.fps},scale={width}:{bottom}:force_original_aspect_ratio=increase,"
+        + covering
+        + f"[1:v]fps={info.fps},scale={width}:{bottom}:force_original_aspect_ratio=increase,"
         f"crop={width}:{bottom}[fillbot];"
-        "[podtop][fillbot]vstack=inputs=2," + ",".join(tail) + "[vout]"
+        f"[{panel}][fillbot]vstack=inputs=2,"
+        + ",".join(tail)
+        + "[vout]"
+    )
+
+
+def _cutaway_stages(
+    cutaways: list[broll.Cutaway],
+    first_input: int,
+    width: int,
+    height: int,
+    label: str,
+) -> tuple[str, str]:
+    """Cover one panel with each planned cutaway, and the label that leaves.
+
+    Returns ("", label) when nothing was planned, so a caller can splice the
+    result in without a branch of its own.
+
+    Each cutaway is its own input file, scaled to cover the panel and then
+    centre-cropped, so it fills the area exactly and carries neither bars nor
+    distortion - the same treatment the filler strip gets.
+
+    setpts is what puts the footage at the moment it belongs at. enable= alone
+    would not: the input still starts at zero, so by the time the window opened
+    the clip would already be most of the way through itself and the cutaway
+    would show its middle rather than its opening.
+
+    eof_action=pass hands the panel straight back once a cutaway's input ends,
+    rather than freezing on its last frame - which is what matters if footage
+    somehow runs short of its window despite the loop.
+
+    Nothing here burns captions. They go on afterwards, on the finished frame:
+    the caption carries the sentence the cutaway illustrates, so covering it
+    with the illustration would be exactly backwards.
+    """
+    if not cutaways:
+        return "", label
+
+    stages: list[str] = []
+    panel = label
+
+    for position, cutaway in enumerate(cutaways):
+        covered = f"cut{position}"
+        stages.append(
+            f"[{first_input + position}:v]"
+            f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={width}:{height},"
+            f"setpts=PTS-STARTPTS+{cutaway.start_s:.3f}/TB[roll{position}];"
+        )
+        stages.append(
+            f"[{panel}][roll{position}]overlay=0:0:eof_action=pass:"
+            f"enable='between(t,{cutaway.start_s:.3f},{cutaway.end_s:.3f})'[{covered}];"
+        )
+        panel = covered
+
+    return "".join(stages), panel
+
+
+def _broll_filter(
+    info: VideoInfo,
+    subtitle_name: str | None,
+    sendcmd_name: str | None,
+    camera: tracker.CameraBox | None,
+    cutaways: list[broll.Cutaway],
+) -> str:
+    """The ordinary layout with cutaways composited over it, then captions.
+
+    Reached only when there is something to cut away to and no filler; with
+    filler the cutaway belongs on the podcast panel rather than over the whole
+    frame, and _filler_filter places it there instead.
+
+    The layout is exactly whatever _build_filter already produces for the
+    chosen CROP_MODE, asked for with no captions so they can be burned last -
+    the same trick _filler_filter uses, and for the same reason.
+    """
+    covering, panel = _cutaway_stages(
+        cutaways, 1, config.TARGET_WIDTH, config.TARGET_HEIGHT, "framed"
+    )
+
+    tail = ["setsar=1"]
+    if subtitle_name:
+        tail.append(f"subtitles={subtitle_name}")
+
+    return (
+        f"[0:v]{_build_filter(info, None, sendcmd_name, camera)}[framed];"
+        + covering
+        + f"[{panel}]"
+        + ",".join(tail)
+        + "[vout]"
     )
 
 
@@ -297,6 +395,37 @@ def _filler_footage() -> Path | None:
         "- using the normal layout"
     )
     return None
+
+
+
+def _cutaways(part: ClipPart, language: str | None) -> list[broll.Cutaway]:
+    """Cutaways to composite over this part, in the order they appear.
+
+    Planned against the part, not the whole clip. part.groups are already
+    rebased so the part begins at zero - splitter does that, and the -ss seek
+    zeroes the clock to match - so a cutaway's start_s is directly a time in
+    the rendered file. Planning against the clip instead would put part two's
+    cutaways somewhere past its end.
+
+    Never raises, and drops anything whose footage is no longer on disk: a
+    missing cutaway is a clip without a cutaway, never a failed render.
+    """
+    try:
+        planned = broll.plan(part.groups, part.duration_s, language)
+    except Exception as exc:
+        # Planning reaches the network for footage, and no clip is worth
+        # losing to a stock site having a bad afternoon.
+        print(f"    b-roll unavailable ({type(exc).__name__}) - no cutaways")
+        return []
+
+    usable = [c for c in planned if c.clip is not None and c.clip.exists()]
+    for cutaway in usable:
+        print(
+            f"    cutaway at {cutaway.start_s:.1f}s for "
+            f"{cutaway.duration_s:.1f}s: {cutaway.topic}"
+        )
+
+    return usable
 
 
 # Detection costs a frame extraction and a pass of the face detector over the
@@ -394,24 +523,44 @@ def render_part(
             str(source),
         ]
 
+        cutaways = _cutaways(part, language) if config.USE_BROLL else []
+
+        # Inputs are positional in the filter graph, so the cutaways' index
+        # depends on whether the filler took slot 1 ahead of them.
+        first_cutaway_input = 2 if filler_source is not None else 1
+
         if filler_source is not None:
-            # Looped indefinitely so shorter filler never freezes or cuts to
-            # black. That leaves nothing to stop vstack on its own: it holds
-            # the podcast's last frame once that (finite, -t above) input
-            # ends rather than closing, so without a hard stop the output
-            # would run forever against the looped filler. An explicit -t on
-            # the *output* is that stop, independent of the input-side one.
+            args += ["-stream_loop", "-1", "-i", str(filler_source)]
+
+        for cutaway in cutaways:
+            # Looped for the same reason the filler is: footage shorter than
+            # the window it covers would otherwise freeze on its last frame.
+            args += ["-stream_loop", "-1", "-i", str(cutaway.clip)]
+
+        if filler_source is not None:
+            graph = _filler_filter(
+                info, subtitle_name, sendcmd_name, camera, cutaways, first_cutaway_input
+            )
+        elif cutaways:
+            graph = _broll_filter(info, subtitle_name, sendcmd_name, camera, cutaways)
+        else:
+            graph = None
+
+        if graph is not None:
             args += [
-                "-stream_loop",
-                "-1",
-                "-i",
-                str(filler_source),
                 "-filter_complex",
-                _filler_filter(info, subtitle_name, sendcmd_name, camera),
+                graph,
                 "-map",
                 "[vout]",
+                # Only ever the podcast's audio. The filler and the cutaways
+                # bring their own soundtracks and none of them belong here.
                 "-map",
                 "0:a",
+                # Every looped input above is infinite, so nothing in the graph
+                # ends on its own - vstack and overlay both hold a finished
+                # input's last frame rather than closing. This is the stop, and
+                # it has to be on the output because the input-side -t only
+                # bounds the podcast.
                 "-t",
                 f"{part.duration_s:.3f}",
             ]
