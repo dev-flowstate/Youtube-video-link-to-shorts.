@@ -14,6 +14,7 @@ import audio
 import caption_builder
 import config
 import ffmpeg_tools
+import hook_card
 import renderer
 import splitter
 import thought
@@ -221,6 +222,16 @@ def render_clip(
             f"{part.duration_s:.0f}s, {len(part.groups)} caption group(s) - rendering"
         )
         print(f"    title: {title}")
+
+        # Chosen here rather than in the renderer, which knows about pixels and
+        # not about sentences - the same division make_title above sits on.
+        # Printed either way: a card that silently did not appear looks
+        # identical to a feature that is switched off.
+        card = hook_card.choose(words, language) if config.HOOK_CARD else None
+        if config.HOOK_CARD:
+            shown = f'"{card}"' if card else "none - no line short enough to carry one"
+            print(f"    hook card: {shown}")
+
         rendered.append(
             renderer.render_part(
                 clip,
@@ -230,6 +241,7 @@ def render_clip(
                 crop_path=crop_path,
                 title=title,
                 language=language,
+                hook=card,
             )
         )
         _write_description(title, words, clip.name, output_path)

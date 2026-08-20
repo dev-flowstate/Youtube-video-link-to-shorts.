@@ -23,10 +23,21 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Clip,{font},{size},&H00{base},&H00{active},&H00{outline},&H80000000,-1,0,0,0,100,100,0,0,1,{outline_w},{shadow},2,{margin_h},{margin_h},{margin_v},1
+Style: Hook,{font},{hook_size},&H00{base},&H00{base},&H{box_alpha}{outline},&H{box_alpha}{outline},-1,0,0,0,100,100,0,0,3,{hook_pad},0,8,{margin_h},{margin_h},{hook_margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+# Padding around the card's text, in pixels. This is the Outline column, which
+# BorderStyle 3 spends on growing the box rather than on stroking the glyphs.
+_HOOK_BOX_PADDING = 18
+
+# Fade in and out, in milliseconds. Short: the card is only up for two seconds
+# and a slow fade eats a quarter of that. Enough that it does not pop on and
+# does not cut off, which both read as a glitch rather than as a title.
+_HOOK_FADE_IN_MS = 120
+_HOOK_FADE_OUT_MS = 250
 
 
 def _format_time(seconds: float) -> str:
@@ -109,11 +120,17 @@ def write_ass(
     groups: list[CaptionGroup],
     destination: Path,
     language: str | None = None,
+    hook: str | None = None,
 ) -> Path:
-    """Write an ASS file covering every caption group.
+    """Write an ASS file covering every caption group, and the hook card.
 
     The font follows the language, because the default carries Latin glyphs
     only and anything else would render as empty boxes.
+
+    The card is an ASS event like any other rather than a drawtext filter, so
+    it inherits that font choice, the frame's PlayRes and the single burn-in
+    step every layout already ends with - a drawtext would need its own copy of
+    all three, in five places.
     """
     header = _HEADER_TEMPLATE.format(
         play_x=config.TARGET_WIDTH,
@@ -127,9 +144,23 @@ def write_ass(
         shadow=config.SHADOW_DEPTH,
         margin_h=config.CAPTION_MARGIN_H,
         margin_v=config.CAPTION_MARGIN_V,
+        hook_size=config.HOOK_FONT_SIZE,
+        hook_margin_v=config.HOOK_MARGIN_V,
+        hook_pad=_HOOK_BOX_PADDING,
+        box_alpha=config.HOOK_BOX_ALPHA,
     )
 
     lines = [header]
+
+    if hook:
+        # From the clip's first frame, because that is the frame being judged.
+        fade = f"{{\\fad({_HOOK_FADE_IN_MS},{_HOOK_FADE_OUT_MS})}}"
+        lines.append(
+            f"Dialogue: 0,{_format_time(0.0)},"
+            f"{_format_time(config.HOOK_CARD_SECONDS)},Hook,,0,0,0,,"
+            f"{fade}{_escape(hook)}\n"
+        )
+
     for group in groups:
         for start, end, text in _group_events(group):
             lines.append(

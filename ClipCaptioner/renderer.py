@@ -492,6 +492,7 @@ def render_part(
     crop_path: list[tracker.CropKeyframe] | None = None,
     title: str | None = None,
     language: str | None = None,
+    hook: str | None = None,
 ) -> Path:
     """Render one part of a clip as a captioned vertical video."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -506,11 +507,20 @@ def render_part(
     with tempfile.TemporaryDirectory(prefix="clipcaptioner_") as tmp:
         work_dir = Path(tmp)
 
+        # The hook card is another event in the same subtitle file, so it rides
+        # the burn-in every layout already ends with and needs nothing here.
+        # It is not conditional on BURN_CAPTIONS, though: the two are separate
+        # switches, and a clip captioned by hand still wants its opening card.
         subtitle_name = None
-        if config.BURN_CAPTIONS:
+        if config.BURN_CAPTIONS or hook:
             subtitle_name = "subs.ass"
             # The font follows the language: the default has Latin glyphs only.
-            ass_writer.write_ass(part.groups, work_dir / subtitle_name, language)
+            ass_writer.write_ass(
+                part.groups if config.BURN_CAPTIONS else [],
+                work_dir / subtitle_name,
+                language,
+                hook,
+            )
 
         sendcmd_name = None
         if crop_path:

@@ -48,6 +48,12 @@ def _parse_args() -> argparse.Namespace:
     cutaways.add_argument("--no-broll", dest="broll", action="store_false",
                           help="Never cut away from the speaker.")
 
+    card = parser.add_mutually_exclusive_group()
+    card.add_argument("--hook-card", dest="hook_card", action="store_true", default=None,
+                      help="Put the clip's claim across the top of its first seconds. On by default.")
+    card.add_argument("--no-hook-card", dest="hook_card", action="store_false",
+                      help="Leave the opening frame to the footage.")
+
     filler = parser.add_mutually_exclusive_group()
     filler.add_argument("--parkour", dest="parkour", action="store_true", default=None,
                         help="Play ambient filler footage under the clip without asking.")
@@ -167,6 +173,12 @@ def main() -> int:
     if args.face_tracking is not None:
         config.TRACK_FACES = args.face_tracking
 
+    # No prompt for this one, unlike filler and cutaways: it competes with
+    # nothing, occupying an upper third every layout leaves empty and only for
+    # the opening seconds, so there is no choice for the operator to make.
+    if args.hook_card is not None:
+        config.HOOK_CARD = args.hook_card
+
     # Filler and cutaways compete for the same frame, so this is one choice
     # rather than two switches. A flag on either side settles it without
     # asking; otherwise the prompt does.
@@ -193,6 +205,7 @@ def main() -> int:
         print(f"Layout:   crop, {'face-tracked' if config.TRACK_FACES else 'centred'}")
     else:
         print(f"Layout:   {config.CROP_MODE}")
+    print(f"Hook:     {f'card, first {config.HOOK_CARD_SECONDS:g}s' if config.HOOK_CARD else 'no card'}")
     print(f"Filler:   {'on' if config.PARKOUR_FILLER else 'off'}")
     if config.SOURCE_TAIL_PADDING_SECONDS > 0:
         # Worth stating rather than applying quietly. It is right for clips the

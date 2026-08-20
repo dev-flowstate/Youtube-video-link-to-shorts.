@@ -532,31 +532,38 @@ HOOK_CARD = True
 
 # How long the card stays up, in seconds.
 #
-# Two, because the card has to be gone before the viewer has decided. The
-# seed-audience test this exists for is settled in the first one to three
-# seconds, so a card still up at four is no longer context for the clip - it is
-# the clip, and the speaker is talking underneath it. Two seconds is also about
-# three times what reading it actually takes, which covers a viewer who arrives
-# a beat late or reads it twice.
+# Tied to HOOK_MAX_WORDS by one number: a short on-screen line is scanned at
+# roughly four words a second, so ten words is about two and a half. Under
+# that the last words are still being read when the card fades, which is worse
+# than never showing them.
 #
-# Raise it towards 3.0 for a long card or a slow speaker. Past that the card
-# stops introducing the moment and starts obscuring it.
-HOOK_CARD_SECONDS = 2.0
+# It cannot go much past this either. The seed-audience test this exists for is
+# settled in the first one to three seconds, so a card still up at four is no
+# longer context for the clip - it is the clip, with the speaker talking
+# underneath it. 2.5 fits the reading and still clears the frame inside the
+# window being judged.
+HOOK_CARD_SECONDS = 2.5
 
-# Longest a card may be, in words. Two independent limits land on the same
+# Longest a card may be, in words. Two independent limits land near the same
 # number, which is why it is this one.
 #
-# Reading: a viewer reading while listening manages perhaps two to three words
-# a second on a first pass, so eight words is around three seconds of split
-# attention - already the whole budget. Anything longer is still being read
-# when it disappears, which is worse than never showing it.
+# Reading: a line on screen is scanned rather than read, at roughly four words
+# a second, so ten words is about two and a half - which is what
+# HOOK_CARD_SECONDS is set to. The two numbers are the same measurement.
 #
 # Fitting: Arial Black runs about 0.62 x the font size per character, so at
 # HOOK_FONT_SIZE in a 1080-wide frame with CAPTION_MARGIN_H either side a line
-# holds roughly 22 characters. Eight words of average length is about 47
-# characters, which wraps to two lines and stays well clear of the speaker.
-# Raising this without lowering HOOK_FONT_SIZE pushes the card down the frame.
-HOOK_MAX_WORDS = 8
+# holds roughly 21 characters. Ten words of average length is about 55
+# characters, which wraps to three lines and still ends in the top quarter of
+# the frame, well clear of a face. Raising this without lowering
+# HOOK_FONT_SIZE walks the card down towards the speaker.
+#
+# The card is always a whole sentence, never part of one, so this is a filter
+# rather than a budget: a longer sentence is passed over, not cut down. Six,
+# seven and eight were all measured on real transcripts and were too tight -
+# at eight the best line in one clip, "They want to put $465,000 up to a coin
+# flip", was thrown away for "Best man's gonna win".
+HOOK_MAX_WORDS = 10
 
 # Smaller than the captions on purpose. The card carries a whole sentence where
 # a caption carries three words, so at FONT_SIZE it would wrap to four lines and
