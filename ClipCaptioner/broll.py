@@ -35,7 +35,7 @@ from models import CaptionGroup, Word, join_word_texts
 # glitch, short enough that the speaker is back before the viewer wonders where
 # they went. Anything past about two seconds stops being a cutaway and starts
 # being a scene the viewer did not ask for.
-CUTAWAY_DURATION_S = 1.5
+CUTAWAY_DURATION_S = 2.5
 
 # A cutaway shortened by the tail guard below this is dropped instead. Under a
 # second reads as a flicker.
@@ -55,12 +55,12 @@ TAIL_GUARD_S = 1.5
 # an eighth of the runtime and each cut has time to be forgotten before the
 # next. Below about ten the clip starts to feel like a slideshow, and the face
 # carrying the clip stops being the thing on screen.
-MIN_SPACING_S = 12.0
+MIN_SPACING_S = 9.0
 
 # The real brake. A 45s clip gets one cutaway, a 55s clip two. "Very few" is
 # the correct number: b-roll is seasoning, and the reason automated edits look
 # automated is that they use it at a constant rate rather than sparingly.
-MAX_CUTAWAYS_PER_MINUTE = 2.5
+MAX_CUTAWAYS_PER_MINUTE = 4.0
 
 # Regardless of length. Guards a long input from turning into a montage.
 MAX_CUTAWAYS = 4
@@ -128,28 +128,59 @@ _ENV_KEY = "GEMINI_API_KEY"
 # model to save it does not belong in the list.
 _CONCRETE_NOUNS = frozenset(
     """
-    ocean sea beach wave shore coast island tide
-    forest tree woods jungle leaf branch grass meadow garden flower
-    mountain hill cliff valley canyon desert dune
-    river lake stream waterfall rain snow storm lightning thunder ice
-    sky cloud sun sunset sunrise moon star
-    fire flame smoke volcano
-    dog cat puppy horse bird fish shark whale dolphin lion tiger bear wolf
-    elephant snake butterfly bee spider
-    city street road highway traffic bridge building skyscraper
+    ocean sea beach wave shore coast island tide sand reef coral
+    forest tree woods jungle leaf branch grass meadow garden flower palm pine
+    mountain hill cliff valley canyon desert dune cave glacier iceberg rock stone
+    river lake stream waterfall rain snow storm lightning thunder ice puddle
+    sky cloud sun sunset sunrise moon star rainbow fog
+    fire flame smoke volcano ash
+    dog cat puppy kitten horse bird fish shark whale dolphin lion tiger bear wolf
+    elephant snake butterfly bee spider cow sheep goat pig chicken duck eagle owl
+    monkey rabbit deer fox mouse frog turtle octopus penguin ant
+    city street road highway traffic bridge building skyscraper tower castle
+    statue fountain bench fence roof wall alley rooftop
     office kitchen bedroom bathroom hospital school classroom gym restaurant
     cafe airport station library factory farm stadium church supermarket
+    home house apartment hotel museum park store shop market bar prison
     car truck bus train plane airplane boat ship bike bicycle motorcycle
-    rocket helicopter
-    phone laptop computer screen keyboard camera television clock
+    rocket helicopter subway tram taxi ambulance tractor skateboard scooter
+    kayak canoe sail
+    phone laptop computer screen keyboard camera television clock robot drone
+    satellite printer headphones microphone
     battery charger cable
     book newspaper letter map guitar piano drum candle mirror window door
-    stairs desk chair table bed pillow blanket
-    coffee tea water bread pizza food fruit apple cake
-    money cash coin wallet
-    ball football basketball tennis
-    baby kid child children crowd
-    walking swimming hiking dancing cooking surfing
+    stairs desk chair table bed pillow blanket ladder rope hammer knife
+    scissors brush pen pencil paper envelope box basket bottle glass cup
+    plate spoon fork lock suitcase backpack shoes jacket glasses umbrella
+    coffee tea water bread pizza food fruit apple cake rice pasta burger
+    sandwich salad soup egg cheese milk chocolate banana orange lemon honey
+    money cash coin wallet gold diamond
+    ball football basketball tennis soccer baseball golf boxing yoga skiing
+    surfboard
+    baby kid child children crowd family friend team audience doctor nurse
+    teacher student athlete runner chef farmer
+    fireworks balloon flag crown trophy medal gift wedding party concert
+    festival parade
+    walking swimming hiking dancing cooking surfing sleeping reading writing
+    """.split()
+)
+
+# Words from the list above that arrive figuratively as often as literally.
+# These alone still need saying twice, because a single mention is more likely
+# to be a turn of phrase than a subject: "weather the storm", "opens doors",
+# "rock bottom", "a wave of change", "the key to success". Everything else
+# fires on one mention, which is what makes the feature visible at all - at two
+# mentions for every word it fired once across nine clips.
+#
+# The second group was found by testing rather than predicted: "baby" is an
+# exclamation at least as often as a noun, and "Let's get it, baby" pulled
+# footage of an infant. The same goes for man, boy, girl, dog and beast in
+# excited speech, and for gold and bomb as praise.
+_FIGURATIVE_NOUNS = frozenset(
+    """
+    storm fire wave rock stone door window key ladder bridge chain mirror
+    light star cloud water road path
+    baby kid man boy girl dog beast bomb gold ball
     """.split()
 )
 
@@ -448,7 +479,12 @@ def plan(
                 continue
         else:
             # Nothing judged this moment, so it has to clear the bar alone.
-            if candidate.mentions < FALLBACK_MIN_MENTIONS:
+            needed = (
+                FALLBACK_MIN_MENTIONS
+                if candidate.noun in _FIGURATIVE_NOUNS
+                else 1
+            )
+            if candidate.mentions < needed:
                 continue
             topic = _SEARCH_OVERRIDES.get(candidate.noun, candidate.noun)
 
