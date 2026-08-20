@@ -435,7 +435,16 @@ OPEN_ON_HOOK = True
 # 10.0 was also conservative for a reason that does not hold: the downloader
 # snaps the cut outward to a pause, so the moment the clip exists for sits at
 # HOOK_LEAD_SECONDS or later, not earlier.
-MAX_START_SHIFT_SECONDS = 15.0
+# Measured from the clip's first frame, so it has to move with
+# HOOK_LEAD_SECONDS. That is now 4.0, meaning the replayed moment sits about
+# four seconds in; leaving this at 15 would let the opening drift eleven
+# seconds *past* the very moment the clip exists for.
+#
+# Six allows a couple of seconds past the peak, which is still on the moment,
+# while covering the whole run-up. If no sentence starts inside it the opening
+# stays where it is - and unlike before, a mid-sentence open is survivable now
+# that the hook card tells the viewer what is coming.
+MAX_START_SHIFT_SECONDS = 6.0
 
 # Let Gemini pick the opening instead of scoring sentences by their shape.
 # Shape can see a question mark, a number or a name; it cannot see whether a

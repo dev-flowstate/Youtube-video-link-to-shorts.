@@ -65,13 +65,23 @@ MAX_CLIP_SECONDS = 45.0
 #
 # The peak is the moment people replayed, so it is the hook, and the opening
 # seconds are the whole audition - in a Shorts feed there is no thumbnail, the
-# first frames are it. Clips used to be centred on the peak, which spent half
-# their length on the run-up.
+# first frames are it.
 #
-# Not zero, though. A podcast payoff is a sentence, and opening exactly on it
-# lands mid-thought. This carries the setup, and boundary snapping widens it to
-# the start of that sentence.
-HOOK_LEAD_SECONDS = 10.0
+# Was 10.0, which spent the opening ten seconds getting to the moment people
+# actually replayed. On a Short that is most of the window in which a viewer
+# decides to stay, and the research on why these stall is blunt about it: lead
+# with the peak, do not build up to it.
+#
+# Four rather than one, because a podcast payoff is a sentence and a hard cut
+# onto the peak lands mid-clause. Four seconds is roughly a sentence of run-up:
+# enough that the line makes grammatical sense, short enough that the payoff
+# arrives while the viewer is still deciding.
+#
+# What makes this safe is the hook card, which did not exist when this was 10.
+# The objection to opening near the peak was that a cold viewer has no context;
+# the card now states the point on screen while the speaker is still reaching
+# it, so the run-up no longer has to carry that job.
+HOOK_LEAD_SECONDS = 4.0
 
 # What kind of video this is, which decides what evidence is trusted.
 #   "talk"    - podcasts and interviews. Most-replayed and chat only.
