@@ -475,11 +475,22 @@ USE_BROLL = True
 
 PARKOUR_FILLER = False
 
-# Topics tried in order until one has footage, via stock.fetch(). Kept as a
-# list rather than one topic because a niche query like "subway surfers
-# gameplay" can come back empty on a stock site built for real-world footage;
-# the earlier, more generic topics almost always have something.
-FILLER_TOPICS: list[str] = ["parkour", "satisfying", "subway surfers gameplay"]
+# Where your own filler footage lives. Drop Minecraft parkour, Subway Surfers
+# or anything else in here and it is used ahead of anything fetched.
+#
+# This folder exists because Pexels cannot supply game footage and never will.
+# It is a real-life stock library, and a game recording belongs to whoever
+# recorded it. Asked for "minecraft parkour" it ignores the word minecraft and
+# returns people leaping between rooftops; asked for "subway surfers gameplay"
+# it returns a photograph of a subway train. The filler in the first renders
+# was a Pexels clip called "yoga and freerunning" - a nearly static shot of a
+# tree, occupying thirty percent of every frame with nothing moving.
+FILLER_DIR = _PROJECT_ROOT / "filler"
+
+# Fallback topics, used only when FILLER_DIR is empty. Real-life footage, since
+# that is all a stock site has. Kept because some filler beats a black strip,
+# but supplying your own is the point.
+FILLER_TOPICS: list[str] = ["parkour", "satisfying"]
 
 # Share of the height given to the podcast. The rest holds the filler strip.
 # The podcast is the content and has to keep dominating the frame; the filler

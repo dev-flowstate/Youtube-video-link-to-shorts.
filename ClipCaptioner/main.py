@@ -96,22 +96,28 @@ def _ask_about_layout() -> str:
     return {"2": "stacked", "3": "fit"}.get(answer, "crop")
 
 
-def _ask_about_filler() -> bool:
-    """Ask whether to run ambient filler footage under the clip.
+def _ask_about_extras() -> str:
+    """Ask what else runs alongside the speaker, if anything.
 
-    Worth asking rather than assuming either way: it is meant to hold
-    attention under a talking head, but has no place under gameplay or a
-    stream, where the frame is already busy with something to watch.
+    One question rather than two, because the two answers compete for the same
+    frame. Filler takes a permanent strip along the bottom; a cutaway covers
+    the picture for a second or two. Running both puts a cutaway in a box above
+    a parkour clip, which is busier than either and reads as neither.
+
+    A piped or scheduled run gets neither. Both are opinions about a clip, and
+    a run with nobody watching should not silently apply one.
     """
-    print("\nAdd ambient filler footage (parkour, satisfying clips, etc.)")
-    try:
-        answer = input("under the clip? [y/N] ").strip().lower()
-    except EOFError:
-        # Piped or scheduled run - filler is an opinion about the clip, and a
-        # non-interactive run should not silently apply one.
-        return False
+    print("\nWhat runs alongside the speaker?")
+    print("  [1] Nothing        - just the clip")
+    print("  [2] Filler footage - parkour or similar along the bottom")
+    print("  [3] Cutaways       - stock scenes when a subject is named")
 
-    return answer in {"y", "yes"}
+    try:
+        answer = input("Choose [1]: ").strip() or "1"
+    except EOFError:
+        return "none"
+
+    return {"2": "filler", "3": "broll"}.get(answer, "none")
 
 
 def main() -> int:
@@ -161,13 +167,16 @@ def main() -> int:
     if args.face_tracking is not None:
         config.TRACK_FACES = args.face_tracking
 
-    # No prompt for this one. There are already three, and unlike filler a
-    # cutaway is only planned when the speaker actually names something
-    # concrete - most clips get none and never notice the setting.
-    if args.broll is not None:
-        config.USE_BROLL = args.broll
-
-    config.PARKOUR_FILLER = args.parkour if args.parkour is not None else _ask_about_filler()
+    # Filler and cutaways compete for the same frame, so this is one choice
+    # rather than two switches. A flag on either side settles it without
+    # asking; otherwise the prompt does.
+    if args.parkour is not None or args.broll is not None:
+        config.PARKOUR_FILLER = bool(args.parkour)
+        config.USE_BROLL = bool(args.broll)
+    else:
+        chosen = _ask_about_extras()
+        config.PARKOUR_FILLER = chosen == "filler"
+        config.USE_BROLL = chosen == "broll"
 
     language_note = config.WHISPER_LANGUAGE or "auto-detect"
 

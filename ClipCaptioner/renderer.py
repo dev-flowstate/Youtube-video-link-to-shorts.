@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import random
 import subprocess
 import tempfile
 from pathlib import Path
@@ -384,10 +385,26 @@ def _filler_footage() -> Path | None:
         return _filler_source
 
     _filler_resolved = True
+
+    # Your own footage first. A stock site has no game footage at all, so
+    # Minecraft parkour can only come from this folder - asked for it directly
+    # Pexels ignores the word and returns people jumping between real rooftops.
+    # Chosen at random rather than in order, so a batch does not run the same
+    # clip under every video.
+    own = sorted(p for p in config.FILLER_DIR.glob("*.mp4") if p.stat().st_size > 0)
+    if own:
+        _filler_source = random.choice(own)
+        print(f"    filler: {_filler_source.name} (yours)")
+        return _filler_source
+
     for topic in config.FILLER_TOPICS:
         found = stock.fetch(topic, want=1)
         if found:
             _filler_source = found[0]
+            print(
+                f"    filler: {_filler_source.name} (stock '{topic}')"
+                f" - put your own clips in {config.FILLER_DIR.name}/ to use those instead"
+            )
             return _filler_source
 
     print(
