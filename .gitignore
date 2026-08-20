@@ -95,3 +95,8 @@ EsportsClipper/models/synthetic/
 # Stock footage fetched from Pexels. Re-downloadable from the topic name, and
 # a library of it grows well past what belongs in a repo.
 ClipCaptioner/stock/
+
+# The local title model - 2.6 GB, and re-downloadable from the id in config.py.
+# The face-detection model above stays tracked because it is 227 KB and the
+# renderer cannot work without it; this one is a different order of magnitude.
+ClipCaptioner/models/phi35/

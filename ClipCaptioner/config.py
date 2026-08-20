@@ -6,6 +6,7 @@ free of magic numbers.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -13,6 +14,16 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = Path(__file__).resolve().parent
+
+# Model downloads land beside the project rather than on the system drive.
+#
+# Set here rather than left to the environment on purpose. HF_HOME is also set
+# as a user environment variable, but a terminal inherits its environment from
+# when its parent window opened, so a VS Code window opened before that was set
+# cannot see it - which is exactly how a missing GEMINI_API_KEY once sent this
+# pipeline silently down a path nobody wanted. An existing value always wins,
+# so anyone who has pointed it somewhere deliberately keeps their setting.
+os.environ.setdefault("HF_HOME", str(_PROJECT_ROOT.parent / ".cache" / "huggingface"))
 
 # Folder holding the cut clips produced by YouTubeReplayDownloader. Points at
 # that project's default output folder, so the two steps line up with no setup.
@@ -499,3 +510,77 @@ FILLER_TOPICS: list[str] = ["parkour", "satisfying"]
 # STACKED_CAMERA_SHARE, where both halves of a stream reaction are actually
 # worth watching and the split sits close to even.
 FILLER_PODCAST_SHARE = 0.70
+
+# ---------------------------------------------------------------------------
+# Opening hook card
+# ---------------------------------------------------------------------------
+
+# A line of the clip's own words across the top of its first seconds, saying
+# what a cold viewer is about to hear.
+#
+# On by default, and the only one of these extras that is. A Shorts feed gives
+# a clip about a second to be understood, with no thumbnail and no title on
+# screen, and OPEN_ON_HOOK can only choose *which* sentence the viewer lands
+# mid-way through - it cannot make a spoken sentence arrive faster than speech.
+# The card can: reading eight words costs well under a second, saying them
+# costs three. Set from the command line with --hook-card / --no-hook-card.
+#
+# Unlike filler and cutaways this needs no prompt, because it competes with
+# nothing: it occupies the upper third, which every layout here leaves empty,
+# and only for the opening seconds.
+HOOK_CARD = True
+
+# How long the card stays up, in seconds.
+#
+# Two, because the card has to be gone before the viewer has decided. The
+# seed-audience test this exists for is settled in the first one to three
+# seconds, so a card still up at four is no longer context for the clip - it is
+# the clip, and the speaker is talking underneath it. Two seconds is also about
+# three times what reading it actually takes, which covers a viewer who arrives
+# a beat late or reads it twice.
+#
+# Raise it towards 3.0 for a long card or a slow speaker. Past that the card
+# stops introducing the moment and starts obscuring it.
+HOOK_CARD_SECONDS = 2.0
+
+# Longest a card may be, in words. Two independent limits land on the same
+# number, which is why it is this one.
+#
+# Reading: a viewer reading while listening manages perhaps two to three words
+# a second on a first pass, so eight words is around three seconds of split
+# attention - already the whole budget. Anything longer is still being read
+# when it disappears, which is worse than never showing it.
+#
+# Fitting: Arial Black runs about 0.62 x the font size per character, so at
+# HOOK_FONT_SIZE in a 1080-wide frame with CAPTION_MARGIN_H either side a line
+# holds roughly 22 characters. Eight words of average length is about 47
+# characters, which wraps to two lines and stays well clear of the speaker.
+# Raising this without lowering HOOK_FONT_SIZE pushes the card down the frame.
+HOOK_MAX_WORDS = 8
+
+# Smaller than the captions on purpose. The card carries a whole sentence where
+# a caption carries three words, so at FONT_SIZE it would wrap to four lines and
+# reach the speaker's face; and it should read as a different thing from the
+# captions rather than as one that has drifted up the frame.
+HOOK_FONT_SIZE = 72
+
+# Distance from the top of the frame to the top of the card, in pixels.
+#
+# The upper third is the one part of a 1080x1920 Short that every layout here
+# leaves empty: a cropped or fitted talking head puts the face around the
+# middle, the stacked layout's camera panel starts at the top but a face inside
+# it still sits low, and captions sit at CAPTION_MARGIN_V from the *bottom*,
+# which is around y=1150 - so the two cannot collide.
+#
+# 150 rather than 0 because a phone's status bar and notch overlay the very top
+# of a full-bleed video, and because text hard against the frame edge reads as a
+# mistake.
+HOOK_MARGIN_V = 150
+
+# Transparency of the card's backing box, as ASS alpha: 00 is opaque, FF is
+# invisible. The box is what makes the card read as a card rather than as a
+# mistimed caption, and it is what guarantees the text stays legible over a
+# bright or busy frame, where an outline alone is a gamble. 40 is solid enough
+# to carry white text over anything and still shows the footage moving behind
+# it.
+HOOK_BOX_ALPHA = "40"
