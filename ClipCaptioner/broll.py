@@ -68,15 +68,26 @@ HOOK_GUARD_S = 5.0
 # Nor in the closing seconds, so the clip ends on the person talking.
 TAIL_GUARD_S = 1.5
 
-# Minimum gap between two cutaways. At twelve seconds, footage occupies at most
-# an eighth of the runtime and each cut has time to be forgotten before the
-# next. Below about ten the clip starts to feel like a slideshow, and the face
-# carrying the clip stops being the thing on screen.
+# Minimum gap between two cutaways. At six seconds and 1.6s shots the worst
+# case is footage on screen a quarter of the time, with each cut still having
+# several seconds to be forgotten before the next.
+#
+# The worst case does not happen. Measured across twelve real clips the highest
+# share was 10.1%, because qualifying moments are far rarer than this spacing
+# allows - see MAX_CUTAWAYS_PER_MINUTE below. This is a guard against a
+# slideshow, not the thing deciding how often a cutaway appears.
 MIN_SPACING_S = 6.0
 
-# The real brake. A 45s clip gets one cutaway, a 55s clip two. "Very few" is
-# the correct number: b-roll is seasoning, and the reason automated edits look
-# automated is that they use it at a constant rate rather than sparingly.
+# Not the brake, despite being written as one. A 45s clip may now take six
+# cutaways and a 55s clip seven, but measured across twelve real clips the
+# counts came out 0 to 4, and raising this from 4.0 produced exactly one extra
+# cutaway in the whole sample.
+#
+# What actually decides how many appear is how few spoken words are in
+# _CONCRETE_NOUNS: one clip of 173 words matched twice. So this is a ceiling
+# that no longer binds, kept only to stop a dense clip becoming a montage. The
+# next change that wants more cutaways has to widen what counts as a subject,
+# not raise this number again.
 MAX_CUTAWAYS_PER_MINUTE = 8.0
 
 # Regardless of length. Guards a long input from turning into a montage.
