@@ -9,6 +9,7 @@ then run:
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -200,6 +201,55 @@ def _refine_with_speech(
     return refined
 
 
+def _ask_about_captioning(count: int) -> bool:
+    """Ask whether to caption the clips that were just cut.
+
+    The two steps have always been run by hand, one after the other, and the
+    second is never really optional - a folder of landscape clips with no
+    captions is not what anyone wanted. Asked rather than assumed only because
+    a run might be feeding the footage somewhere else.
+    """
+    try:
+        answer = input(f"\nCaption these {count} clip(s) now? [Y/n] ").strip().lower()
+    except EOFError:
+        # Piped or scheduled: carry on, because stopping here leaves the job
+        # half done and nobody is watching to finish it by hand.
+        return True
+
+    return answer not in {"n", "no"}
+
+
+def _run_clip_captioner(output_dir: Path) -> int:
+    """Hand the finished clips to ClipCaptioner, in its own process.
+
+    A subprocess rather than an import. Both projects define config.py and
+    main.py, so importing the sibling puts two different modules under the same
+    names and whichever loads first wins - the exact collision EsportsClipper
+    needs shared.py to work around. A separate process keeps each project's
+    imports its own, and inherits this terminal so ClipCaptioner's prompts
+    still reach you.
+    """
+    # Resolved before handing over, because the subprocess runs with its cwd
+    # set to ClipCaptioner. A relative path would be read from there instead,
+    # quietly pointing the captioner at its own output folder.
+    output_dir = output_dir.resolve()
+
+    captioner = Path(__file__).resolve().parent.parent / "ClipCaptioner"
+    entry = captioner / "main.py"
+    if not entry.exists():
+        print(f"\nClipCaptioner not found at {captioner}")
+        print(f"Clips are in {output_dir}")
+        return 1
+
+    print(f"\nHanding {len(list(output_dir.glob('*.mp4')))} clip(s) to ClipCaptioner...\n")
+    result = subprocess.run(
+        [sys.executable, "-u", str(entry), "--input", str(output_dir)],
+        cwd=str(captioner),
+        check=False,
+    )
+    return result.returncode
+
+
 def _mark_output_as_talk(output_dir: Path) -> None:
     """Tell ClipCaptioner how much of each clip is padding rather than clip.
 
@@ -381,6 +431,10 @@ def main() -> int:
         for path in saved_files:
             print(f"  - {path.name}")
 
+        if saved_files and _ask_about_captioning(len(saved_files)):
+            return _run_clip_captioner(output_dir)
+
+        print(f"\nTo caption them later:\n  cd ../ClipCaptioner && py main.py")
         return 0
 
     except InvalidYouTubeURL as exc:
