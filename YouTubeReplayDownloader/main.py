@@ -201,25 +201,50 @@ def _refine_with_speech(
     return refined
 
 
-def _ask_about_captioning(count: int) -> bool:
-    """Ask whether to caption the clips that were just cut.
+def _ask_about_captioning() -> list[str] | None:
+    """Ask up front whether to caption, and how, so the run can be left alone.
 
-    The two steps have always been run by hand, one after the other, and the
-    second is never really optional - a folder of landscape clips with no
-    captions is not what anyone wanted. Asked rather than assumed only because
-    a run might be feeding the footage somewhere else.
+    Asked before the download rather than after it, because the download is the
+    long part. A question waiting at the end means coming back to a prompt
+    instead of to finished Shorts.
+
+    Every answer ClipCaptioner would otherwise ask for is collected here and
+    passed as flags, so it never stops to ask once it starts. Moving only the
+    first question would have achieved nothing: the other three would still be
+    sitting there an hour later.
+
+    Returns the flags to run it with, or None to skip captioning.
     """
     try:
-        answer = input(f"\nCaption these {count} clip(s) now? [Y/n] ").strip().lower()
+        if input("Caption the clips afterwards? [Y/n] ").strip().lower() in {"n", "no"}:
+            return None
+
+        flags: list[str] = []
+
+        answer = input("  Burn captions in? [Y/n] ").strip().lower()
+        flags.append("--no-captions" if answer in {"n", "no"} else "--captions")
+
+        print("  Layout:  [1] podcast  [2] streamer  [3] gameplay")
+        layout = input("  Choose [1]: ").strip() or "1"
+        flags += ["--layout", {"2": "stacked", "3": "fit"}.get(layout, "crop")]
+
+        print("  Alongside the speaker:  [1] cutaways  [2] filler  [3] nothing")
+        extras = input("  Choose [1]: ").strip() or "1"
+        if extras == "2":
+            flags += ["--parkour", "--no-broll"]
+        elif extras == "3":
+            flags += ["--no-parkour", "--no-broll"]
+        else:
+            flags += ["--broll", "--no-parkour"]
+
+        return flags
     except EOFError:
-        # Piped or scheduled: carry on, because stopping here leaves the job
-        # half done and nobody is watching to finish it by hand.
-        return True
-
-    return answer not in {"n", "no"}
+        # Piped or scheduled: caption with the defaults rather than stopping,
+        # since a half-finished job helps nobody when there is no one watching.
+        return ["--captions", "--layout", "crop", "--broll", "--no-parkour"]
 
 
-def _run_clip_captioner(output_dir: Path) -> int:
+def _run_clip_captioner(output_dir: Path, flags: list[str]) -> int:
     """Hand the finished clips to ClipCaptioner, in its own process.
 
     A subprocess rather than an import. Both projects define config.py and
@@ -243,7 +268,7 @@ def _run_clip_captioner(output_dir: Path) -> int:
 
     print(f"\nHanding {len(list(output_dir.glob('*.mp4')))} clip(s) to ClipCaptioner...\n")
     result = subprocess.run(
-        [sys.executable, "-u", str(entry), "--input", str(output_dir)],
+        [sys.executable, "-u", str(entry), "--input", str(output_dir), *flags],
         cwd=str(captioner),
         check=False,
     )
@@ -339,6 +364,7 @@ def main() -> int:
     print(f"URL: {YOUTUBE_URL}\n")
 
     content = CONTENT_TYPE or _ask_content_type()
+    caption_flags = _ask_about_captioning()
     if content is None:
         print("\nGameplay needs a different detector - casters and gunfire, not")
         print("speech. Use EsportsClipper, which is built for it:\n")
@@ -431,8 +457,8 @@ def main() -> int:
         for path in saved_files:
             print(f"  - {path.name}")
 
-        if saved_files and _ask_about_captioning(len(saved_files)):
-            return _run_clip_captioner(output_dir)
+        if saved_files and caption_flags is not None:
+            return _run_clip_captioner(output_dir, caption_flags)
 
         print(f"\nTo caption them later:\n  cd ../ClipCaptioner && py main.py")
         return 0
