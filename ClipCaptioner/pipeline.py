@@ -17,6 +17,7 @@ import ffmpeg_tools
 import hook_card
 import renderer
 import splitter
+import sponsor
 import thought
 import titler
 import tracker
@@ -137,6 +138,30 @@ def process_clip(clip: Path, output_dir: Path) -> list[Path]:
     return render_clip(clip, groups, output_dir, language)
 
 
+def _is_advert(clip: Path, groups: list[CaptionGroup]) -> bool:
+    """Whether this clip is a sponsor read, and should not become a Short.
+
+    An episode yields only a handful of clips and the most-replayed graph
+    cannot tell an advert from an insight - listeners scrub across sponsor
+    segments, which registers as replay activity in exactly the same way. On a
+    real episode two of four clips came back as sponsor reads.
+
+    Rejected here rather than before the cut, because deciding needs the
+    transcript and the transcript needs the clip. The slot is already spent by
+    this point; what this prevents is the advert reaching the output.
+    """
+    if not config.SKIP_SPONSOR_READS:
+        return False
+
+    advert, total, hits = sponsor.is_sponsor(groups)
+    if advert:
+        print(
+            f"    skipped - reads as a sponsor segment "
+            f"(score {total:.1f}: {', '.join(hits[:4])})"
+        )
+    return advert
+
+
 def render_clip(
     clip: Path,
     groups: list[CaptionGroup],
@@ -144,6 +169,9 @@ def render_clip(
     language: str | None = None,
 ) -> list[Path]:
     """Render an already-transcribed clip."""
+    if _is_advert(clip, groups):
+        return []
+
     info = ffmpeg_tools.probe_video(clip)
     duration = info.duration_s
 

@@ -491,6 +491,20 @@ MIN_PART_DURATION_S = 15.0
 # charging phone as he says the battery is draining, children as he says "if
 # you're a kid". On by default because it is the point of fetching stock at
 # all; the planner is conservative and most clips get none.
+# Drop a clip whose transcript reads as a sponsor segment.
+#
+# The most-replayed graph cannot tell an advert from an insight: listeners
+# scrub across sponsor reads, and scrubbing registers as replay activity just
+# as rewatching does. On a real 1h50m episode two of the four clips produced
+# were adverts - half the output, and the half nobody watches.
+#
+# The signals are reliable because a read has to carry them: it spells out a
+# domain for listeners who cannot click, offers a code, quotes a discount, and
+# names who is paying. Ordinary conversation does none of that. Measured on
+# real text, sponsor reads scored 8.5 and 18.0 against 0.0 to 2.5 for talk that
+# merely mentions a website.
+SKIP_SPONSOR_READS = True
+
 USE_BROLL = True
 
 PARKOUR_FILLER = False

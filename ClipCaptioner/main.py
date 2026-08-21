@@ -114,16 +114,16 @@ def _ask_about_extras() -> str:
     a run with nobody watching should not silently apply one.
     """
     print("\nWhat runs alongside the speaker?")
-    print("  [1] Nothing        - just the clip")
+    print("  [1] Cutaways       - stock scenes when a subject is named")
     print("  [2] Filler footage - parkour or similar along the bottom")
-    print("  [3] Cutaways       - stock scenes when a subject is named")
+    print("  [3] Nothing        - just the clip")
 
     try:
         answer = input("Choose [1]: ").strip() or "1"
     except EOFError:
         return "none"
 
-    return {"2": "filler", "3": "broll"}.get(answer, "none")
+    return {"2": "filler", "3": "none"}.get(answer, "broll")
 
 
 def main() -> int:
