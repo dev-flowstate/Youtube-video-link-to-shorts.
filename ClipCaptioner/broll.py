@@ -35,7 +35,24 @@ from models import CaptionGroup, Word, join_word_texts
 # glitch, short enough that the speaker is back before the viewer wonders where
 # they went. Anything past about two seconds stops being a cutaway and starts
 # being a scene the viewer did not ask for.
-CUTAWAY_DURATION_S = 2.5
+# Retuned together after watching a finished batch: "there wasnt enough stock
+# video for people to visualise and the book stock video was for too long".
+#
+# Both complaints were the same cap. A 40s clip allowed
+# min(MAX_CUTAWAYS, 40/60 * MAX_CUTAWAYS_PER_MINUTE) = 2 cutaways, each 2.5s -
+# too few to register as a pattern, and each lingering long enough to notice.
+#
+# The duration has now moved twice, and the first move was my mistake. It began
+# at 1.5s, and when cutaways seemed invisible I raised it to 2.5 - treating a
+# frequency problem as a length problem. Fixing the frequency is what lets the
+# length come back down, so it is near where it started.
+#
+# A 40s clip now allows 5 cutaways of 1.6s: 8 seconds of footage, a fifth of
+# the runtime. Short enough to read as a punctuation mark rather than a cutaway
+# the clip has to recover from, frequent enough to be a pattern the viewer
+# notices. Not below about 1.5s, where a shot reads as a glitch rather than an
+# illustration.
+CUTAWAY_DURATION_S = 1.6
 
 # A cutaway shortened by the tail guard below this is dropped instead. Under a
 # second reads as a flicker.
@@ -55,15 +72,15 @@ TAIL_GUARD_S = 1.5
 # an eighth of the runtime and each cut has time to be forgotten before the
 # next. Below about ten the clip starts to feel like a slideshow, and the face
 # carrying the clip stops being the thing on screen.
-MIN_SPACING_S = 9.0
+MIN_SPACING_S = 6.0
 
 # The real brake. A 45s clip gets one cutaway, a 55s clip two. "Very few" is
 # the correct number: b-roll is seasoning, and the reason automated edits look
 # automated is that they use it at a constant rate rather than sparingly.
-MAX_CUTAWAYS_PER_MINUTE = 4.0
+MAX_CUTAWAYS_PER_MINUTE = 8.0
 
 # Regardless of length. Guards a long input from turning into a montage.
-MAX_CUTAWAYS = 4
+MAX_CUTAWAYS = 8
 
 # How many candidates to put in front of Gemini. More than the cap, so a moment
 # it rejects - or one no footage exists for - can be backfilled from the same
