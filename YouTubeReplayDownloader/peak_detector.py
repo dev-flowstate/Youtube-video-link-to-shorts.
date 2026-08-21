@@ -173,6 +173,75 @@ def _trim_to_peak(
     return max(start_s, new_start), min(end_s, new_end)
 
 
+def backfill(
+    points: list[HeatmapPoint],
+    chosen: list[ReplaySegment],
+    wanted: int,
+    *,
+    min_segment_seconds: float = 4.0,
+    max_segment_seconds: float = 90.0,
+    lead_in_seconds: float = DEFAULT_LEAD_IN_S,
+) -> list[ReplaySegment]:
+    """Top the selection up with the next best moments when peaks ran out.
+
+    Strict peak detection asks a moment to be a local maximum that clears a
+    prominence and a height bar, and on a long podcast that throws away a great
+    deal. Measured on a 150 minute episode: the raw curve holds 32 local
+    maxima, smoothing leaves 13, the thresholds pass 9 - against a budget of
+    10. The scores behind those cuts run 0.498, 0.490, 0.414, 0.384, 0.374,
+    0.353 and on down with no cliff anywhere, so there is no honest reading in
+    which the tenth moment is unusable and the ninth is fine.
+
+    So when detection comes up short, the shortfall is filled by ranking every
+    point by score and taking the best that do not overlap something already
+    chosen. A backfilled moment is not a peak - it is a stretch people replayed
+    without a clean maximum, which is a weaker claim, and it is used only after
+    every real peak has been taken.
+    """
+    if len(chosen) >= wanted or len(points) < 4:
+        return []
+
+    scores, starts, ends, centers = _scores_and_times(points)
+    smoothed = _smooth_scores(scores)
+    baseline, threshold, _spread = _baseline_and_threshold(smoothed)
+
+    extra: list[ReplaySegment] = []
+    for index in np.argsort(-smoothed):
+        if len(chosen) + len(extra) >= wanted:
+            break
+
+        peak_s = float(centers[index])
+        start_s, end_s = _expand_segment(
+            smoothed, starts, ends, int(index), threshold, baseline
+        )
+        if end_s - start_s < min_segment_seconds:
+            continue
+
+        start_s, end_s = _trim_to_peak(
+            start_s, end_s, peak_s, max_segment_seconds, lead_in_seconds
+        )
+
+        candidate = ReplaySegment(
+            start_s=start_s,
+            end_s=end_s,
+            peak_s=peak_s,
+            peak_score=float(smoothed[index]),
+            prominence=_peak_prominence(smoothed, int(index)),
+        )
+
+        # Never repeat footage already spoken for. Overlap here is measured
+        # against the finished windows rather than the peaks, because two peaks
+        # ninety seconds apart still produce clips that share most of a minute.
+        clash = any(
+            min(candidate.end_s, other.end_s) > max(candidate.start_s, other.start_s)
+            for other in chosen + extra
+        )
+        if not clash:
+            extra.append(candidate)
+
+    return extra
+
+
 def _segments_overlap(a: ReplaySegment, b: ReplaySegment, overlap_ratio: float = 0.5) -> bool:
     overlap = min(a.end_s, b.end_s) - max(a.start_s, b.start_s)
     if overlap <= 0:

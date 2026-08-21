@@ -18,6 +18,7 @@ import speech
 from downloader import DownloadError, download_all_segments, fetch_video_title
 from ffmpeg_utils import FFmpegNotFoundError
 from moment_finder import NoMomentSignal, find_moments
+import peak_detector as detect
 from peak_detector import ReplaySegment, detect_replay_segments
 from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 
@@ -336,6 +337,27 @@ def main() -> int:
                 f"keeping the {budget} hottest of {len(segments)} peaks."
             )
             segments = _pick_hottest(segments, budget)
+        elif len(segments) < budget:
+            # Peak detection came up short. It asks a moment to be a local
+            # maximum clearing a prominence and a height bar, which on a long
+            # podcast discards a great deal: on a 150 minute episode the raw
+            # curve holds 32 local maxima, smoothing leaves 13 and the
+            # thresholds pass 9, against a budget of 10. The scores behind
+            # those cuts decline smoothly with no cliff, so the moments just
+            # under the bar are not meaningfully worse than the ones just over.
+            extra = detect.backfill(
+                moments.points,
+                segments,
+                budget,
+                max_segment_seconds=detect_budget,
+                lead_in_seconds=HOOK_LEAD_SECONDS,
+            )
+            if extra:
+                print(
+                    f"Only {len(segments)} clear peak(s) for a budget of {budget} - "
+                    f"adding the {len(extra)} next best moment(s)."
+                )
+                segments = sorted(segments + extra, key=lambda s: s.start_s)
 
         # Padding is added last so it cannot push two candidates into overlap
         # during selection, which would cost one of the slots.
