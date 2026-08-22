@@ -33,9 +33,15 @@ CAPTIONER_DIR = ROOT / "ClipCaptioner"
 # tree other people commit in.
 SETTINGS_PATH = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "ClipStudio" / "settings.json"
 
-# One spacing scale for the whole window. Ad-hoc numbers per widget are what
-# make an interface look assembled rather than designed.
-GAP, PAD, WIDE = 8, 16, 24
+# One spacing scale for the whole window, each step twice the one below it.
+# Ad-hoc numbers per widget are what make an interface look assembled rather
+# than designed.
+TIGHT, GAP, PAD, WIDE = 4, 8, 16, 24
+
+# A label frame draws its title across the top border, which already opens up
+# the space a full pad would add there. Padding the top as heavily as the other
+# three sides just leaves a hole under every heading.
+BOX = (PAD, GAP, PAD, PAD)
 
 POLL_MS = 100  # how often the window drains what the pipeline has printed
 
@@ -65,9 +71,12 @@ EXTRAS = {
     "none": ["--no-broll", "--no-parkour"],
 }
 
-INK = "#1c1c1c"
-LOG_COLOURS = {
-    "out": INK,
+# The log is colour-coded, and the same ink cannot serve both papers. The
+# plain set is for light system ttk; the dark set is what Sun Valley needs,
+# because on #181818 the light colours land between 1.0:1 and 3.3:1 against
+# the paper - technically present, practically unreadable.
+PLAIN_COLOURS = {
+    "out": "#1c1c1c",
     # stderr, which here is mostly progress: tqdm and ffmpeg both report
     # through it. It gets its own colour rather than the failure one, because
     # painting every progress bar red would leave a real error indisting-
@@ -77,7 +86,26 @@ LOG_COLOURS = {
     "fail": "#b3261e",
     "done": "#1b7a44",
 }
-OUTCOME_COLOURS = {"Finished": LOG_COLOURS["done"], "Ready": INK}
+# Contrast against the dark paper in the comments. Plain output is deliberately
+# the quietest of the five: most lines are that one, and a wall of them at full
+# brightness leaves nothing for a failure to stand out against.
+DARK_COLOURS = {
+    "out": "#d6d6d6",   # 12.2:1
+    "err": "#e3a857",   #  8.5:1
+    "sys": "#79b8ff",   #  8.6:1
+    "fail": "#ff7b72",  #  7.0:1
+    "done": "#56d364",  #  9.2:1
+}
+LOG_COLOURS = dict(PLAIN_COLOURS)  # _paint() swaps in the dark set
+
+# The log is a plain Tk text widget, so no ttk theme reaches it and its paper
+# is set by hand to match whichever theme is in use.
+PLAIN_PAPER = "#fcfcfc"
+DARK_PAPER = "#181818"  # a shade under the window, so the log reads as inset
+
+# What the primary button says when it is not busy. Two places need to agree
+# on it: the one that builds it and the one that puts it back afterwards.
+RUN_LABEL = "Cut and caption"
 
 
 def _python() -> str:
@@ -98,6 +126,68 @@ def _python() -> str:
 def _quoted(argv: list[str]) -> str:
     """The command as you would have to type it, for the log."""
     return " ".join(f'"{part}"' if " " in part else part for part in argv)
+
+
+def _paint(root: tk.Tk) -> str:
+    """Theme the window, and hand back the paper colour for the log.
+
+    Dark, because this window is mostly log and the log is program output. On
+    dark paper all five line colours can be bright, and bright colours separate
+    from one another; on white they have to be dark enough to read, which drags
+    the amber, the red and the green towards the same muddy middle.
+
+    The theme is a nicety, not a dependency. A machine without sv-ttk - or with
+    a copy of it that will not load - still has a pipeline to run, so a failure
+    here falls back to plain ttk and the palette that suits it.
+    """
+    try:
+        import sv_ttk
+
+        sv_ttk.set_theme("dark", root)
+    except Exception:
+        return PLAIN_PAPER
+
+    _darken_title_bar(root)
+    LOG_COLOURS.update(DARK_COLOURS)
+    return DARK_PAPER
+
+
+def _darken_title_bar(root) -> None:
+    """Ask Windows to draw this window's title bar dark.
+
+    sv-ttk restyles the widgets inside the window; the title bar belongs to the
+    desktop manager and stays light, which leaves a white strip along the top
+    of a dark window and reads as half-finished rather than themed.
+
+    DWMWA_USE_IMMERSIVE_DARK_MODE is attribute 20 on Windows 10 build 18985 and
+    later, and was 19 on the builds before it. Both are tried because the call
+    simply reports failure on a build that does not know the attribute.
+
+    Entirely cosmetic, so every failure is swallowed: an older Windows, a
+    non-Windows machine, or a missing symbol leaves the light title bar exactly
+    as it is and changes nothing else.
+    """
+    try:
+        import ctypes
+
+        root.update_idletasks()  # the window must exist before DWM will style it
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        enabled = ctypes.c_int(1)
+        for attribute in (20, 19):
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, attribute, ctypes.byref(enabled), ctypes.sizeof(enabled)
+            ) == 0:
+                return
+    except Exception:
+        pass
+
+
+def _outcome_colour(outcome: str) -> str:
+    """What colour the status text is once a run has stopped."""
+    return {
+        "Finished": LOG_COLOURS["done"],
+        "Ready": LOG_COLOURS["out"],
+    }.get(outcome, LOG_COLOURS["fail"])
 
 
 def _load_settings() -> dict:
@@ -149,36 +239,66 @@ class Studio:
     def _build(self) -> None:
         root = self.root
         root.title("Clip Studio")
-        root.geometry("940x700")
-        root.minsize(820, 560)
+        # Taller controls need more room than the plain-ttk version did, but not
+        # more than the screen has: at 125% scaling a 1080p desktop leaves about
+        # 816pt once the taskbar has taken its strip, and a window taller than
+        # that opens with its last inch already behind the taskbar.
+        root.geometry("960x760")
+        root.minsize(840, 600)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(4, weight=1)  # only the log takes the extra height
 
+        paper = _paint(root)
+
+        # Fixed width for the log and the spinbox, the two places digits matter.
+        # The pipeline prints counters that change width as they climb - [9/12]
+        # to [10/12], byte counts, timestamps - and in a proportional font every
+        # one of them shifts the line sideways as it updates, which reads as
+        # noise. The spinbox has the same problem in miniature: 9 to 10 nudges
+        # the field. Labels and controls stay in the system UI font.
+        families = set(tkfont.families())
+        family = next((f for f in ("Consolas", "Cascadia Mono", "Courier New") if f in families), None)
+        self.log_font = tkfont.Font(family=family, size=10) if family else tkfont.nametofont("TkFixedFont")
+        self.log_bold = self.log_font.copy()
+        self.log_bold.configure(weight="bold")
+        self.digit_font = self.log_font.copy()
+
         style = ttk.Style()
-        # Run and Stop are the two buttons that matter, and a default ttk button
-        # is about 24px tall - fine in a dialog, small for the control that
-        # starts a five hour job. Height comes from grid ipady below, which
-        # every theme honours; this widens the label off the edges.
-        style.configure("Action.TButton", padding=(WIDE, 6))
+        # Nothing in here should need aiming at. A ttk tick, radio or small
+        # button is about 24px tall out of the box, comfortably under the 40px
+        # a control wants to be; padding makes up the difference, and it comes
+        # off the same scale as every other gap in the window.
+        style.configure("TButton", padding=(PAD, GAP))
+        style.configure("TCheckbutton", padding=(0, GAP + TIGHT))
+        style.configure("TRadiobutton", padding=(0, GAP + TIGHT))
+        style.configure("TEntry", padding=(GAP, GAP))
+        style.configure("Digits.TSpinbox", padding=(GAP, GAP), font=self.digit_font)
+
+        # Run and Stop are the two buttons that matter, so they are the largest
+        # things in the window. Run is also the only filled one: it starts the
+        # work, and the eye should find it without reading. Stop is an outline,
+        # because throwing away a five hour download is not the default move.
+        for action in ("Action.TButton", "Action.Accent.TButton"):
+            style.configure(action, padding=(WIDE, PAD))
 
         # -- source
-        source = ttk.LabelFrame(root, text=" Source ", padding=PAD)
-        source.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(PAD, GAP))
+        source = ttk.LabelFrame(root, text=" Source ", padding=BOX)
+        source.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(GAP, GAP))
         source.columnconfigure(1, weight=1)
 
         ttk.Label(source, text="YouTube link").grid(row=0, column=0, sticky="w", padx=(0, PAD))
         self.url_entry = ttk.Entry(source, textvariable=self.url_var)
         self.url_entry.grid(row=0, column=1, sticky="ew")
-        self.paste_btn = ttk.Button(source, text="Paste", width=9, command=self._paste)
-        self.paste_btn.grid(row=0, column=2, padx=(GAP, 0))
+        self.paste_btn = ttk.Button(source, text="Paste", command=self._paste)
+        self.paste_btn.grid(row=0, column=2, sticky="ew", padx=(GAP, 0))
 
         ttk.Label(source, text="Save finished clips to").grid(
             row=1, column=0, sticky="w", padx=(0, PAD), pady=(GAP, 0)
         )
         self.dest_entry = ttk.Entry(source, textvariable=self.dest_var)
         self.dest_entry.grid(row=1, column=1, sticky="ew", pady=(GAP, 0))
-        self.browse_btn = ttk.Button(source, text="Browse...", width=9, command=self._browse)
-        self.browse_btn.grid(row=1, column=2, padx=(GAP, 0), pady=(GAP, 0))
+        self.browse_btn = ttk.Button(source, text="Choose folder", command=self._browse)
+        self.browse_btn.grid(row=1, column=2, sticky="ew", padx=(GAP, 0), pady=(GAP, 0))
 
         # -- the two choices that decide the shape of the finished clip
         choices = ttk.Frame(root)
@@ -186,7 +306,7 @@ class Studio:
         choices.columnconfigure(0, weight=1, uniform="choice")
         choices.columnconfigure(1, weight=1, uniform="choice")
 
-        style_box = ttk.LabelFrame(choices, text=" Style ", padding=PAD)
+        style_box = ttk.LabelFrame(choices, text=" Style ", padding=BOX)
         style_box.grid(row=0, column=0, sticky="nsew", padx=(0, GAP))
         self.style_radios = [
             self._radio(style_box, text, self.style_var, value, row)
@@ -200,7 +320,7 @@ class Studio:
         ]
         self.style_var.trace_add("write", self._sync_face_tracking)
 
-        extras_box = ttk.LabelFrame(choices, text=" Alongside the speaker ", padding=PAD)
+        extras_box = ttk.LabelFrame(choices, text=" Alongside the speaker ", padding=BOX)
         extras_box.grid(row=0, column=1, sticky="nsew", padx=(GAP, 0))
         self.extras_radios = [
             self._radio(extras_box, text, self.extras_var, value, row)
@@ -213,7 +333,7 @@ class Studio:
             )
         ]
 
-        finishing = ttk.LabelFrame(root, text=" Finishing ", padding=PAD)
+        finishing = ttk.LabelFrame(root, text=" Finishing ", padding=BOX)
         finishing.grid(row=2, column=0, sticky="ew", padx=PAD, pady=GAP)
         self.captions_check = ttk.Checkbutton(finishing, text="Burn captions in", variable=self.captions_var)
         self.captions_check.grid(row=0, column=0, sticky="w", padx=(0, WIDE))
@@ -225,24 +345,31 @@ class Studio:
         ttk.Label(finishing, text="Clips per hour of source").grid(
             row=1, column=0, sticky="w", pady=(PAD, 0)
         )
-        self.per_hour_spin = ttk.Spinbox(finishing, from_=1, to=60, width=5, textvariable=self.per_hour_var)
-        self.per_hour_spin.grid(row=1, column=1, sticky="w", pady=(PAD, 0))
+        self.per_hour_spin = ttk.Spinbox(
+            finishing, from_=1, to=60, width=5, textvariable=self.per_hour_var, style="Digits.TSpinbox"
+        )
+        self.per_hour_spin.grid(row=1, column=1, sticky="w", padx=(GAP, 0), pady=(PAD, 0))
 
         # -- run, stop, and where the run has got to
         actions = ttk.Frame(root)
         actions.grid(row=3, column=0, sticky="ew", padx=PAD, pady=(0, GAP))
         actions.columnconfigure(2, weight=1)
 
-        self.run_btn = ttk.Button(actions, text="Run", style="Action.TButton", command=self._on_run)
-        self.run_btn.grid(row=0, column=0, ipady=10)
+        # A fixed width, because this button relabels itself as the run moves
+        # through its stages and a button that resizes under the cursor is the
+        # kind of small wrongness people notice without being able to name.
+        self.run_btn = ttk.Button(
+            actions, text=RUN_LABEL, width=17, style="Action.Accent.TButton", command=self._on_run
+        )
+        self.run_btn.grid(row=0, column=0)
         # A mis-click that kills a five hour download is expensive, so Stop
         # keeps its distance from Run rather than sitting flush against it.
         self.stop_btn = ttk.Button(
-            actions, text="Stop", style="Action.TButton", command=self._on_stop, state="disabled"
+            actions, text="Stop", width=8, style="Action.TButton", command=self._on_stop, state="disabled"
         )
-        self.stop_btn.grid(row=0, column=1, padx=(WIDE, 0), ipady=10)
+        self.stop_btn.grid(row=0, column=1, padx=(WIDE, 0))
 
-        self.status_label = ttk.Label(actions, textvariable=self.status_var, foreground=INK)
+        self.status_label = ttk.Label(actions, textvariable=self.status_var, foreground=LOG_COLOURS["out"])
         self.status_label.grid(row=0, column=2, sticky="e", padx=(WIDE, PAD))
         self.progress = ttk.Progressbar(actions, mode="determinate", value=0, length=180)
         self.progress.grid(row=0, column=3, sticky="e")
@@ -253,31 +380,28 @@ class Studio:
         log_box.rowconfigure(0, weight=1)
         log_box.columnconfigure(0, weight=1)
 
-        # Fixed width for the log alone. The pipeline prints counters that
-        # change width as they climb - [9/12] to [10/12], byte counts,
-        # timestamps - and in a proportional font every one of them shifts the
-        # line sideways as it updates, which reads as noise. Labels and controls
-        # stay in the system UI font.
-        families = set(tkfont.families())
-        family = next((f for f in ("Consolas", "Cascadia Mono", "Courier New") if f in families), None)
-        self.log_font = tkfont.Font(family=family, size=10) if family else tkfont.nametofont("TkFixedFont")
-        self.log_bold = self.log_font.copy()
-        self.log_bold.configure(weight="bold")
-
         self.log = ScrolledText(
             log_box,
             wrap="word",
-            height=12,
+            height=10,
             font=self.log_font,
-            background="#fcfcfc",
-            foreground=INK,
+            background=paper,
+            foreground=LOG_COLOURS["out"],
+            selectbackground="#2f60d8",  # the same blue either theme selects with
+            selectforeground="#ffffff",
             relief="flat",
             borderwidth=0,
-            padx=GAP,
+            highlightthickness=0,
+            padx=PAD,
             pady=GAP,
             state="disabled",
         )
         self.log.grid(row=0, column=0, sticky="nsew")
+        # The scrollbar ScrolledText brings with it is left alone deliberately.
+        # It is a plain Tk one, and on Windows that is drawn by the system: it
+        # accepts -troughcolor and -background and then ignores them, so it
+        # stays light beside a dark log. Nothing short of swapping the widget
+        # out changes that, and it is not worth swapping a working widget for.
         for tag, colour in LOG_COLOURS.items():
             self.log.tag_configure(tag, foreground=colour)
         for tag in ("fail", "done"):
@@ -296,13 +420,16 @@ class Studio:
             *self.extras_radios,
         ]
 
-        # An empty panel reads as broken, so say what will appear here.
+        # An empty panel reads as broken, so say what will appear here and what
+        # it will take. One line of orientation, shown once, not a tour.
         self._append(
             [
                 (
                     "sys",
-                    "Nothing has run yet. Paste a link, choose a folder, then press Run - "
-                    "everything the pipeline prints appears here as it happens.",
+                    "Nothing has run yet. Paste a YouTube link, choose where the finished "
+                    f"clips should go, then press {RUN_LABEL}. Everything the downloader "
+                    "and the captioner print lands here as it happens, so a long video "
+                    "will scroll for a while.",
                     False,
                 )
             ]
@@ -312,7 +439,7 @@ class Studio:
 
     def _radio(self, parent: ttk.LabelFrame, text: str, var: tk.StringVar, value: str, row: int) -> ttk.Radiobutton:
         button = ttk.Radiobutton(parent, text=text, variable=var, value=value)
-        button.grid(row=row, column=0, sticky="w", pady=2)
+        button.grid(row=row, column=0, sticky="ew")
         return button
 
     # -- small actions -----------------------------------------------------
@@ -609,7 +736,7 @@ class Studio:
             widget.configure(state="disabled")
         self.run_btn.configure(state="disabled", text="Working...")
         self.stop_btn.configure(state="normal")
-        self.status_label.configure(foreground=INK)
+        self.status_label.configure(foreground=LOG_COLOURS["out"])
         self.progress.configure(mode="indeterminate")
         self.progress.start(14)
 
@@ -619,14 +746,14 @@ class Studio:
         for widget in self._inputs:
             widget.configure(state="normal")
         self._sync_face_tracking()
-        self.run_btn.configure(state="normal", text="Run")
+        self.run_btn.configure(state="normal", text=RUN_LABEL)
         self.stop_btn.configure(state="disabled")
         self.progress.stop()
         # Stopping an indeterminate bar parks its block at the left, where it
         # reads as a run stuck at nothing. An empty trough says idle.
         self.progress.configure(mode="determinate", value=0)
         self.status_var.set(self.outcome)
-        self.status_label.configure(foreground=OUTCOME_COLOURS.get(self.outcome, LOG_COLOURS["fail"]))
+        self.status_label.configure(foreground=_outcome_colour(self.outcome))
         self.stopping = False
 
     def _say(self, text: str, tag: str) -> None:
