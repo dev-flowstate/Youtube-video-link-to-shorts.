@@ -93,10 +93,14 @@ MAX_CUTAWAYS_PER_MINUTE = 8.0
 # Regardless of length. Guards a long input from turning into a montage.
 MAX_CUTAWAYS = 8
 
-# How many candidates to put in front of Gemini. More than the cap, so a moment
-# it rejects - or one no footage exists for - can be backfilled from the same
-# single request rather than costing another.
-SHORTLIST_SIZE = 6
+# How many candidates get as far as being considered. Sized above the cap so a
+# moment that resolves to no footage can be backfilled by the next one down.
+#
+# This was six because six was what fitted in a single Gemini request. That
+# request no longer happens - USE_GEMINI_SEARCH_TERMS is off - so six had
+# stopped being a batch size and become a silent ceiling on cutaways. Measured
+# on a Steve Jobs clip naming six distinct subjects, it bound exactly.
+SHORTLIST_SIZE = 10
 
 # Ask Gemini to turn each moment into a search phrase. Costs one request per
 # clip. Without a key, without the package, or on any failure, the concrete
@@ -190,6 +194,22 @@ _CONCRETE_NOUNS = frozenset(
     fireworks balloon flag crown trophy medal gift wedding party concert
     festival parade
     walking swimming hiking dancing cooking surfing sleeping reading writing
+    heart brain blood bone muscle smile tear
+    surgery medicine pill syringe wheelchair bandage mask stethoscope
+    college university graduation diploma campus lecture blackboard notebook
+    exam globe microscope telescope laboratory
+    work worker meeting whiteboard presentation handshake interview
+    briefcase elevator warehouse construction crane
+    garage workshop toolbox wrench screwdriver drill
+    typewriter calendar diary journal stamp postcard poster billboard
+    sculpture painting canvas gallery theatre stage curtain spotlight
+    violin trumpet saxophone flute vinyl radio speaker
+    compass anchor lighthouse harbour pier dock net
+    tent campfire trail tunnel railway platform runway
+    watch hourglass bucket broom lamp lantern torch
+    seed soil harvest wheat corn vineyard orchard greenhouse barn
+    bakery barber mechanic
+    frost wind hurricane tornado flood earthquake
     """.split()
 )
 
@@ -206,9 +226,10 @@ _CONCRETE_NOUNS = frozenset(
 # excited speech, and for gold and bomb as praise.
 _FIGURATIVE_NOUNS = frozenset(
     """
-    storm fire wave rock stone door window key ladder bridge chain mirror
+    storm fire wave rock stone door window key ladder bridge chain
     light star cloud water road path
     baby kid man boy girl dog beast bomb gold ball
+    work seed harvest anchor compass wind blood brain net mask stage
     """.split()
 )
 
@@ -216,6 +237,17 @@ _FIGURATIVE_NOUNS = frozenset(
 # returns AA cells, "watch" returns people watching. Everything not listed here
 # is searched for as it was said.
 _SEARCH_OVERRIDES = {
+    "heart": "heartbeat pulse monitor",
+    "work": "person working at desk",
+    "net": "fishing net",
+    "stage": "empty theatre stage",
+    "mask": "face mask",
+    "speaker": "concert loudspeaker",
+    "vinyl": "vinyl record player",
+    "globe": "spinning globe",
+    "trail": "hiking trail",
+    "platform": "train platform",
+    "watch": "wristwatch on wrist",
     "battery": "phone battery charging",
     "charger": "phone charging cable",
     "kid": "children playing",
