@@ -4,10 +4,15 @@ YouTube highlight clip downloader.
 Works on normal videos and on past live broadcasts. Edit YOUTUBE_URL below,
 then run:
     python main.py
+
+Every setting below can also be given as a flag, for callers that cannot edit
+this file - see _parse_args. None of them are required, so the line above
+behaves exactly as it always has.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -27,7 +32,7 @@ from utils import InvalidYouTubeURL, format_timestamp, parse_youtube_url
 # ---------------------------------------------------------------------------
 # Edit this URL before running
 # ---------------------------------------------------------------------------
-YOUTUBE_URL = "https://youtu.be/Q2hOryHdgAk?si=ZtRptZqkR7UQCxlx"
+YOUTUBE_URL = "https://youtu.be/mpAZehPviLQ?si=yDKFpQkjMU3MZ36M"
 
 # Where the finished clips are written. Created automatically if missing.
 # Defaults to an "output" folder next to this script so the project works
@@ -109,6 +114,39 @@ SNAP_TO_SPEECH = True
 TAIL_PADDING_SECONDS = 20.0
 
 
+def _parse_args() -> argparse.Namespace:
+    """Read the settings above as flags, for callers that cannot edit this file.
+
+    The desktop front end has to answer every question without a human, and it
+    cannot rewrite constants in a file it is about to run. Each flag defaults
+    to None so a bare `python main.py` is unchanged - constants for settings,
+    prompts for the rest. Only what is actually passed overrides anything.
+    """
+    parser = argparse.ArgumentParser(
+        description="Cut the most-replayed moments out of a YouTube video."
+    )
+    parser.add_argument("--url", default=None, help="Video to clip. Default: the URL set above.")
+    parser.add_argument("--output", type=Path, default=None, help="Folder for the cut clips.")
+    parser.add_argument(
+        "--clips-per-hour",
+        type=int,
+        default=None,
+        help=f"How many clips to keep per hour of source. Default: {CLIPS_PER_HOUR}.",
+    )
+    parser.add_argument(
+        "--content-type",
+        choices=("talk", "general"),
+        default=None,
+        help="What the video is, which decides which signals are trusted. Skips the prompt.",
+    )
+    parser.add_argument(
+        "--no-caption",
+        action="store_true",
+        help="Cut the clips and stop, rather than handing them to ClipCaptioner.",
+    )
+    return parser.parse_args()
+
+
 def _ask_content_type() -> str | None:
     """Ask what the video is, because it decides which signals are trusted.
 
@@ -135,7 +173,7 @@ def _ask_content_type() -> str | None:
     return "general" if answer == "2" else "talk"
 
 
-def _clip_budget(duration_s: float) -> int:
+def _clip_budget(duration_s: float, clips_per_hour: int = CLIPS_PER_HOUR) -> int:
     """How many clips to take from a source of this length."""
     if FIXED_CLIP_COUNT is not None:
         return max(1, FIXED_CLIP_COUNT)
@@ -143,7 +181,7 @@ def _clip_budget(duration_s: float) -> int:
     if duration_s <= 0:
         return MIN_CLIPS
 
-    wanted = round((duration_s / 3600.0) * CLIPS_PER_HOUR)
+    wanted = round((duration_s / 3600.0) * clips_per_hour)
     return int(max(MIN_CLIPS, min(MAX_CLIPS, wanted)))
 
 
@@ -357,14 +395,19 @@ def main() -> int:
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
 
-    output_dir = OUTPUT_DIR
+    args = _parse_args()
+
+    # Flags win over the constants above, which win over asking.
+    url = args.url or YOUTUBE_URL
+    output_dir = args.output or OUTPUT_DIR
+    clips_per_hour = args.clips_per_hour or CLIPS_PER_HOUR
 
     print("YouTube Highlight Downloader")
     print("=" * 28)
-    print(f"URL: {YOUTUBE_URL}\n")
+    print(f"URL: {url}\n")
 
-    content = CONTENT_TYPE or _ask_content_type()
-    caption_flags = _ask_about_captioning()
+    content = args.content_type or CONTENT_TYPE or _ask_content_type()
+    caption_flags = None if args.no_caption else _ask_about_captioning()
     if content is None:
         print("\nGameplay needs a different detector - casters and gunfire, not")
         print("speech. Use EsportsClipper, which is built for it:\n")
@@ -378,7 +421,7 @@ def main() -> int:
     print(f"Output folder: {output_dir}\n")
 
     try:
-        canonical_url = parse_youtube_url(YOUTUBE_URL)
+        canonical_url = parse_youtube_url(url)
 
         print("Looking for clip-worthy moments...")
         moments = find_moments(canonical_url, allow_speech_energy=allow_energy)
@@ -406,7 +449,7 @@ def main() -> int:
             print("Every candidate was mostly silence. Nothing to download.")
             return 0
 
-        budget = _clip_budget(moments.duration_s)
+        budget = _clip_budget(moments.duration_s, clips_per_hour)
         if len(segments) > budget:
             print(
                 f"Source runs {moments.duration_s / 60:.0f} min - "
