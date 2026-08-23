@@ -359,6 +359,36 @@ def _match(word: Word) -> str | None:
     return None
 
 
+def _sentence_start(words: list[Word], index: int) -> bool:
+    """Whether this word opens a sentence, where a capital means nothing."""
+    if index == 0:
+        return True
+    return words[index - 1].text.rstrip().endswith((".", "?", "!"))
+
+
+def _is_proper_noun(words: list[Word], index: int) -> bool:
+    """Whether this word is a name rather than the thing it spells.
+
+    Several entries in the list above are also companies, and the company is
+    what a podcast means. "The thing about Apple there and Steve Jobs going to
+    that typography" cut to footage of fruit on a table. Amazon, Meta, Oracle,
+    Shell and Orange are all waiting to do the same.
+
+    The transcriber already knows the difference and writes it down: it
+    capitalises a name mid-sentence and leaves the common noun in lower case.
+    _normalise throws that away before anything can read it, so the test has to
+    happen on the original text.
+
+    A capital at the start of a sentence carries no such information, so those
+    are exempt - otherwise a clip opening on "Money is the thing" would lose its
+    cutaway to a rule about company names.
+    """
+    text = words[index].text.strip()
+    if not text or not text[0].isupper():
+        return False
+    return not _sentence_start(words, index)
+
+
 def _context(words: list[Word], index: int, span: int = 8) -> str:
     """The words either side of a match, for the model to judge it in."""
     start = max(0, index - span)
@@ -372,6 +402,8 @@ def _candidates(groups: list[CaptionGroup]) -> list[_Candidate]:
 
     hits: list[tuple[int, Word, str]] = []
     for index, word in enumerate(words):
+        if _is_proper_noun(words, index):
+            continue
         noun = _match(word)
         if noun:
             hits.append((index, word, noun))
