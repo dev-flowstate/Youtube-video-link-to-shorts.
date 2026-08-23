@@ -17,6 +17,7 @@ returns fewer of them rather than raising.
 from __future__ import annotations
 
 import os
+import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,10 @@ MAX_CUTAWAYS = 8
 # stopped being a batch size and become a silent ceiling on cutaways. Measured
 # on a Steve Jobs clip naming six distinct subjects, it bound exactly.
 SHORTLIST_SIZE = 10
+
+# How many different shots to keep per topic, so a subject that comes up in
+# every clip is not always illustrated by the same file.
+VARIANTS_PER_TOPIC = 3
 
 # Ask Gemini to turn each moment into a search phrase. Costs one request per
 # clip. Without a key, without the package, or on any failure, the concrete
@@ -210,6 +215,8 @@ _CONCRETE_NOUNS = frozenset(
     seed soil harvest wheat corn vineyard orchard greenhouse barn
     bakery barber mechanic
     frost wind hurricane tornado flood earthquake
+    people person human humans world movie movies cinema podcast
+    calligraphy handwriting typography
     """.split()
 )
 
@@ -229,7 +236,7 @@ _FIGURATIVE_NOUNS = frozenset(
     storm fire wave rock stone door window key ladder bridge chain
     light star cloud water road path
     baby kid man boy girl dog beast bomb gold ball
-    work seed harvest anchor compass wind blood brain net mask stage
+    work seed harvest anchor compass wind blood brain net mask stage world
     """.split()
 )
 
@@ -237,6 +244,16 @@ _FIGURATIVE_NOUNS = frozenset(
 # returns AA cells, "watch" returns people watching. Everything not listed here
 # is searched for as it was said.
 _SEARCH_OVERRIDES = {
+    "people": "crowd of people walking",
+    "person": "crowd of people walking",
+    "human": "crowd of people walking",
+    "humans": "crowd of people walking",
+    "world": "planet earth from space",
+    "movie": "cinema screen",
+    "movies": "cinema screen",
+    "cinema": "cinema screen",
+    "podcast": "podcast microphone studio",
+    "handwriting": "handwriting with a pen",
     "heart": "heartbeat pulse monitor",
     "work": "person working at desk",
     "net": "fishing net",
@@ -588,9 +605,21 @@ def plan(
         if duration_s is None:
             continue
 
-        footage = stock.fetch(topic, want=1)
+        # Several shots per topic, then one of them at random.
+        #
+        # A handful of subjects come up in nearly every clip - "people" matched
+        # in six of eleven from one podcast - and fetching want=1 returns the
+        # same file every time, so those six Shorts would open the same crowd
+        # shot. Repetition across clips is what makes a channel look automated,
+        # which is the thing this module exists to avoid; it just is not
+        # visible from inside a single clip.
+        #
+        # want=3 downloads at most twice more per topic, once, and only for
+        # topics that actually get used.
+        footage = stock.fetch(topic, want=VARIANTS_PER_TOPIC)
         if not footage:
             continue
+        footage = [random.choice(footage)]
 
         chosen.append(
             Cutaway(
