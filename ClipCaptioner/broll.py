@@ -217,6 +217,15 @@ _CONCRETE_NOUNS = frozenset(
     frost wind hurricane tornado flood earthquake
     people person human humans world movie movies cinema podcast
     calligraphy handwriting typography
+    bill bills banknote invoice receipt tax taxes budget debt loan
+    salary paycheck mortgage savings bank card vault stocks calculator
+    contract signature chart graph shopping
+    workout treadmill weights vitamin supplement
+    server router processor
+    sofa couch rug shelf closet driveway lawn mailbox sink
+    passport luggage ticket
+    folder cabinet badge uniform helmet
+    recipe grocery vegetables meat wine beer
     """.split()
 )
 
@@ -237,6 +246,7 @@ _FIGURATIVE_NOUNS = frozenset(
     light star cloud water road path
     baby kid man boy girl dog beast bomb gold ball
     work seed harvest anchor compass wind blood brain net mask stage world
+    bank card chart debt bill
     """.split()
 )
 
@@ -244,6 +254,28 @@ _FIGURATIVE_NOUNS = frozenset(
 # returns AA cells, "watch" returns people watching. Everything not listed here
 # is searched for as it was said.
 _SEARCH_OVERRIDES = {
+    "bill": "stack of dollar bills",
+    "bills": "stack of dollar bills",
+    "banknote": "stack of dollar bills",
+    "invoice": "invoice paperwork",
+    "receipt": "paper receipt",
+    "tax": "tax forms paperwork",
+    "taxes": "tax forms paperwork",
+    "budget": "budget planning notebook",
+    "debt": "stack of unpaid bills",
+    "loan": "loan agreement paperwork",
+    "salary": "counting money by hand",
+    "paycheck": "counting money by hand",
+    "mortgage": "house keys and paperwork",
+    "savings": "piggy bank savings",
+    "bank": "bank building exterior",
+    "card": "credit card payment",
+    "vault": "bank vault door",
+    "stocks": "stock market chart screen",
+    "chart": "stock market chart screen",
+    "graph": "stock market chart screen",
+    "shopping": "shopping bags",
+    "server": "data centre servers",
     "people": "crowd of people walking",
     "person": "crowd of people walking",
     "human": "crowd of people walking",
