@@ -38,6 +38,46 @@ hunting for faces that a match feed does not have.
 
 ---
 
+## Examples
+
+Real output from the pipeline — a podcast episode in, three vertical clips
+out. Compressed for fast loading here; quality out of the pipeline itself is
+higher.
+
+<table>
+<tr>
+<td align="center" width="33%">
+
+https://github.com/dev-flowstate/Youtube-video-link-to-shorts./raw/main/examples/example-1-he-wasnt-even-thinking-of-himself.mp4
+
+**"He wasn't even thinking of himself"**
+<br><sub>A most-replayed peak, centre-cropped and captioned</sub>
+
+</td>
+<td align="center" width="33%">
+
+https://github.com/dev-flowstate/Youtube-video-link-to-shorts./raw/main/examples/example-2-we-go-to-the-movies-to-feel-emotions.mp4
+
+**"We go to the movies to have an experience, to feel emotions"**
+<br><sub>Face-tracked crop holding the speaker through a camera move</sub>
+
+</td>
+<td align="center" width="33%">
+
+https://github.com/dev-flowstate/Youtube-video-link-to-shorts./raw/main/examples/example-3-she-would-take-20-percent-of-that-cash.mp4
+
+**"She would take 20% of that cash each week"**
+<br><sub>Word-level captions, spoken word highlighted as it's said</sub>
+
+</td>
+</tr>
+</table>
+
+If a video doesn't render inline, the link above it opens the same file in
+GitHub's own player.
+
+---
+
 ## What each step does
 
 ### Step 1 — `YouTubeReplayDownloader`
@@ -351,4 +391,5 @@ ClipCaptioner/             Step 2 — transcribe, caption, crop to vertical
 
 Each folder has its own README with the details of how it works internally.
 
-Clips and rendered videos are gitignored — this repo holds the code only.
+Clips and rendered videos are gitignored — this repo holds the code only,
+apart from the three clips under `examples/` linked above.
